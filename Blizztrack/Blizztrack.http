@@ -1,0 +1,6 @@
+@Blizztrack_HostAddress = http://localhost:5241
+
+GET {{Blizztrack_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
