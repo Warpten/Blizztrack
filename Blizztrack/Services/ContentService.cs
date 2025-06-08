@@ -1,9 +1,9 @@
 ﻿using System.Net;
 using System.Net.Http.Headers;
+
 using Blizztrack.Framework.TACT.Resources;
-using Blizztrack.Options;
 using Blizztrack.Persistence;
-using Microsoft.Extensions.Options;
+
 using Polly;
 using Polly.Retry;
 
@@ -19,6 +19,11 @@ namespace Blizztrack.Services
     
     public readonly record struct ContentQueryResult(HttpStatusCode StatusCode, Stream Body);
     
+    /// <summary>
+    /// Provides access to data off of Blizzard's CDNs.
+    /// </summary>
+    /// <param name="serviceProvider"></param>
+    /// <param name="clientFactory"></param>
     public class ContentService(IServiceProvider serviceProvider, IHttpClientFactory clientFactory)
     {
         private readonly MediatorService _mediatorService = serviceProvider.GetRequiredService<MediatorService>();
@@ -61,7 +66,7 @@ namespace Blizztrack.Services
                     Headers = { Range = state.Range }
                 };
 
-                var response = await state.Client.SendAsync(requestMessage, stoppingToken);
+                var response = await state.Client.SendAsync(requestMessage, HttpCompletionOption.ResponseHeadersRead, stoppingToken);
                 response.EnsureSuccessStatusCode();
 
                 var dataStream = await response.Content.ReadAsStreamAsync();

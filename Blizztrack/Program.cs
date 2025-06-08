@@ -1,30 +1,16 @@
 using Asp.Versioning;
 
 using Blizztrack.API.Converters;
-using Blizztrack.Caching;
-using Blizztrack.Discord;
-using Blizztrack.Extensions;
 using Blizztrack.Framework.TACT;
-using Blizztrack.Framework.TACT.Services;
+using Blizztrack.Framework.TACT.Resources;
 using Blizztrack.Options;
 using Blizztrack.Persistence;
 using Blizztrack.Services;
 using Blizztrack.Services.Hosted;
 
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Scaffolding;
 using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Options;
-
-using NetCord.Hosting.Gateway;
-using NetCord.Hosting.Services.ApplicationCommands;
-using NetCord.Services;
-
-using Polly;
-
-using System.Text.Json;
 
 namespace Blizztrack
 {
@@ -51,9 +37,10 @@ namespace Blizztrack
                 .AddHostedService<SummaryMonitorService>()
                 .AddSingleton<ContentService>()
                 .AddSingleton<LocalCacheService>()
-                .AddSingleton<ResourceLocatorService>()
-                // Global repositories that reuse object instances.
-                .AddSingleton<InstallRepository>();
+                .AddSingleton<IResourceLocator, ResourceLocatorService>()
+                // Repositories that provide shared instances of various TACT file types.
+                .AddSingleton<InstallRepository>()
+                .AddSingleton<EncodingRepository>()
                 // Discord API
                 // .AddDiscordGateway()
                 // .AddApplicationCommands()

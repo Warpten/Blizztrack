@@ -2,7 +2,6 @@
 
 using Blizztrack.API.Filters;
 using Blizztrack.Persistence;
-using Blizztrack.Persistence.Entities;
 
 using Microsoft.AspNetCore.Mvc;
 

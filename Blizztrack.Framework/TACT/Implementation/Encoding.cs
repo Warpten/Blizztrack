@@ -48,18 +48,14 @@ namespace Blizztrack.Framework.TACT.Implementation
         }
 
         /// <summary>
-        /// Enumerates every entry in this file.
+        /// Returns an object able to enumerate entries in this file.
         /// </summary>
-        /// <remarks>The iterator returned by this accessor has <see cref="IDisposable"/> semantics and <b>must</b> be used with a <see langword="using"/> statement.</remarks>
-        public Enumerator<Entry> Entries
-            => _header.CEKey.Enumerate(_dataSupplier, _header.EKeySize, _header.CKeySize);
+        public Accessor<Entry> Entries => new(this, _header.CEKey);
 
         /// <summary>
-        /// Enumerates every specification in the file.
+        /// Returns an object able to enumerate specification references in this file.
         /// </summary>
-        /// <remarks>The iterator returned by this accessor has <see cref="IDisposable"/> semantics and <b>must</b> be used with a <see langword="using"/> statement.</remarks>
-        public Enumerator<Spec> Specifications
-            => _header.EKeySpec.Enumerate(_dataSupplier, _header.EKeySize, _header.CKeySize);
+        public Accessor<Spec> Specifications => new(this, _header.EKeySpec);
 
         /// <summary>
         /// Attempts to find a record associated with a content key.
@@ -130,7 +126,7 @@ namespace Blizztrack.Framework.TACT.Implementation
             var recordData = fileData.Slice(1, 5 + ckeySize + ekeySize * keyCount);
 
             if (keyCount == 0)
-                return new (default, entrySize);
+                return new (default, 0); // Should technically return entrySize, but this is a page end marker record.
 
             var recordContentKey = recordData.Slice(5, ckeySize);
             var recordEncodingKeys = recordData.Slice(5 + ckeySize, keyCount * ekeySize);
@@ -173,6 +169,52 @@ namespace Blizztrack.Framework.TACT.Implementation
         }
 
 #pragma warning disable CS0660, CS0661 // Irrelevant on ref structs because ref structs can't be boxed.
+
+        public readonly ref struct Accessor<E> where E : notnull, allows ref struct
+        {
+            private readonly Encoding _encoding;
+            private readonly TableSchema<E> _schema;
+
+            internal Accessor(Encoding encoding, TableSchema<E> schema)
+            {
+                _encoding = encoding;
+                _schema = schema;
+            }
+
+            /// <summary>
+            /// Enumerates every entry within the associated file.
+            /// </summary>
+            /// <remarks>The iterator returned by this accessor has <see cref="IDisposable"/> semantics and <b>must</b> be used with a <see langword="using"/> statement.</remarks>
+            public readonly Enumerator<E> Enumerate()
+                => _schema.Enumerate(_encoding._dataSupplier, _encoding._header.EKeySize, _encoding._header.CKeySize);
+
+            /// <summary>
+            /// Provides access to individual pages within the associated file.
+            /// </summary>
+            public readonly PagesAccessor<E> Pages => new(_encoding, _schema);
+        }
+
+        public readonly ref struct PagesAccessor<E> where E : notnull, allows ref struct
+        {
+            private readonly Encoding _encoding;
+            private readonly TableSchema<E> _schema;
+
+            public int Count => _schema.PageCount;
+
+            internal PagesAccessor(Encoding encoding, TableSchema<E> schema)
+            {
+                _encoding = encoding;
+                _schema = schema;
+            }
+
+            /// <summary>
+            /// Provides access to every entry within this page.
+            /// </summary>
+            /// <param name="index"></param>
+            /// <remarks>The iterator returned by this accessor has <see cref="IDisposable"/> semantics and <b>must</b> be used with a <see langword="using"/> statement.</remarks>
+            public readonly Enumerator<E> this[int index]
+                => _schema.EnumeratePage(_encoding._dataSupplier, _encoding._header.EKeySize, _encoding._header.CKeySize, index);
+        }
 
         /// <summary>
         /// A thin wrapper around specification information for an <see cref="IEncodingKey{T}">encoding key</see>.
@@ -270,8 +312,13 @@ namespace Blizztrack.Framework.TACT.Implementation
             private readonly int _headerEntrySize = headerEntrySize;
             private readonly int _pageSize = pageSize;
 
+            public readonly int PageCount => (_pages.End.Value - _pages.Start.Value) / _pageSize;
+
             public readonly Enumerator<E> Enumerate(IBinaryDataSupplier fileData, int ekeySize, int ckeySize)
                 => new(fileData, _pages, _pageSize, ekeySize, ckeySize, parser);
+
+            public readonly Enumerator<E> EnumeratePage(IBinaryDataSupplier fileData, int ekeySize, int ckeySize, int pageIndex)
+                => new(fileData, new Range(_pages.Start.Value + pageIndex * _pageSize, _pages.Start.Value + (pageIndex + 1) * _pageSize), _pageSize, ekeySize, ckeySize, parser);
 
             public readonly ReadOnlySpan<byte> ResolvePage(IBinaryDataSupplier fileData, ReadOnlySpan<byte> needle)
             {
@@ -294,14 +341,22 @@ namespace Blizztrack.Framework.TACT.Implementation
             }
         }
 
-        internal readonly record struct EncodingSchema(int CKeySize, int EKeySize, Range EncodingSpec,
-            TableSchema<Entry> CEKey, TableSchema<Spec> EKeySpec);
+        internal readonly struct EncodingSchema(int ckeySize, int ekeySize, Range encodingSpec,
+            TableSchema<Entry> ceKey, TableSchema<Spec> ekeySpec)
+        {
+            public readonly int CKeySize = ckeySize;
+            public readonly int EKeySize = ekeySize;
+            public readonly Range EncodingSpec = encodingSpec;
+            public readonly TableSchema<Entry> CEKey = ceKey;
+            public readonly TableSchema<Spec> EKeySpec = ekeySpec;
+        }
+
 
         /// <summary>
         /// Enumerates entries within a table.
         /// </summary>
         /// <remarks>This object has <see cref="IDisposable"/> semantics and <b>must</b> be used in an <c>using</c> block.</remarks>
-        public unsafe ref struct Enumerator<E> where E : notnull, allows ref struct
+        public unsafe class Enumerator<E> where E : notnull, allows ref struct
         {
             private readonly IBinaryDataSupplier _memoryManager;
             private readonly delegate*<ReadOnlySpan<byte>, int, int, ParsedValue<E>> _parser;
@@ -314,7 +369,7 @@ namespace Blizztrack.Framework.TACT.Implementation
             private readonly int _pageCount;         // Amount of pages
 
             private int _entryOffset = 0;            // Offset of the current entry
-            private int _entrySize = 0;              // Size of the current entry
+            private int _entrySize = 0;
 
             internal Enumerator(IBinaryDataSupplier memoryManager, Range pages, int pageSize,
                 int ekeySize, int ckeySize,
@@ -328,39 +383,41 @@ namespace Blizztrack.Framework.TACT.Implementation
                 _pageStart = pages.Start.Value;
                 _pageSize = pageSize;
                 _pageCount = (pages.End.Value - pages.Start.Value) / pageSize;
-
-                _entrySize = 0;
-
-                Current = default!;
             }
 
-            public readonly Enumerator<E> GetEnumerator() => this;
+            public Enumerator<E> GetEnumerator() => this;
 
             public bool MoveNext()
             {
                 if (_pageIndex >= _pageCount)
                     return false;
 
+                // Get a span over the remainder of the page.
+                var pageRemainder = _memoryManager.Slice(_pageStart + _pageSize * _pageIndex + _entryOffset, _pageSize - _entryOffset);
+                (_, _entrySize) = _parser(pageRemainder, _ekeySize, _ckeySize);
+
                 // If the current offset is past the end of the page, rebase back to the start of the page.
-                if (_entryOffset >= _pageSize)
+                if (_entrySize == 0 && _pageIndex < _pageCount)
                 {
                     ++_pageIndex;
                     _entryOffset = 0;
-                }
-                else
-                {
-                    // Otherwise just move ahead in the page.
-                    _entryOffset += _entrySize;
+
+                    return MoveNext();
                 }
 
-                // Get a span over the remainder of the page.
-                var pageRemainder = _memoryManager.Slice(_pageStart + _pageSize * _pageIndex + _entryOffset, _pageSize - _entryOffset);
-
-                (Current, _entrySize) = _parser(pageRemainder, _ekeySize, _ckeySize);
+                _entryOffset += _entrySize;
                 return _entrySize != 0;
             }
 
-            public E Current { get; private set; }
+            public E Current
+            {
+                get
+                {
+                    var pageRemainder = _memoryManager.Slice(_pageStart + _pageSize * _pageIndex + _entryOffset - _entrySize, _pageSize - _entryOffset + _entrySize);
+                    (var current, _) = _parser(pageRemainder, _ekeySize, _ckeySize);
+                    return current;
+                }
+            }
         }
     }
 }

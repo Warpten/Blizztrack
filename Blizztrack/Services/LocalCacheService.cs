@@ -1,10 +1,7 @@
 ﻿using Blizztrack.Framework.TACT.Resources;
-using Blizztrack.Framework.TACT.Services;
 using Blizztrack.Options;
 
 using Microsoft.Extensions.Options;
-
-using Polly;
 
 namespace Blizztrack.Services
 {

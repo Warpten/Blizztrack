@@ -1,10 +1,14 @@
 ﻿using Blizztrack.Framework.TACT.Resources;
 using Blizztrack.Persistence;
 
-using Polly;
-
 namespace Blizztrack.Services
 {
+    /// <summary>
+    /// Provides utility methods to access resources, optionally downloading them from Blizzard's CDNs.
+    /// </summary>
+    /// <param name="contentService"></param>
+    /// <param name="localCache"></param>
+    /// <param name="serviceProvider"></param>
     public class ResourceLocatorService(ContentService contentService, LocalCacheService localCache, IServiceProvider serviceProvider) : IResourceLocator
     {
         public async Task<ResourceHandle> OpenHandleAsync(string region, ResourceDescriptor descriptor, CancellationToken stoppingToken)
@@ -13,7 +17,7 @@ namespace Blizztrack.Services
             if (outcome == default)
                 await Transfer(await contentService.Query(region, descriptor, stoppingToken), descriptor);
 
-            return outcome;
+            return localCache.OpenHandle(descriptor);
         }
         public async Task<ResourceHandle> OpenHandleAsync(ResourceDescriptor descriptor, CancellationToken stoppingToken)
         {
@@ -27,7 +31,7 @@ namespace Blizztrack.Services
             if (outcome == default)
                 await Transfer(await contentService.Query(endpoints, descriptor, stoppingToken), descriptor);
 
-            return outcome;
+            return localCache.OpenHandle(descriptor);
         }
 
         public async Task<ResourceHandle> OpenHandleAsync(IAsyncEnumerable<PatchEndpoint> endpoints, ResourceDescriptor descriptor, CancellationToken stoppingToken)
