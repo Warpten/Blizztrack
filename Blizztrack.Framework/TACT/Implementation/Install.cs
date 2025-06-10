@@ -8,7 +8,7 @@ using System.Runtime.CompilerServices;
 
 namespace Blizztrack.Framework.TACT.Implementation
 {
-    public class Install
+    public class Install : IResourceParser<Install>
     {
         /// <summary>
         /// An array of all known tags within this file.
@@ -24,6 +24,14 @@ namespace Blizztrack.Framework.TACT.Implementation
         /// The version of this manifest file.
         /// </summary>
         public readonly int Version;
+        public static Install OpenResource(ResourceHandle decompressedHandle)
+            => Open(new MemoryMappedDataSupplier(decompressedHandle));
+
+        public static Install OpenCompressedResource(ResourceHandle compressedHandle)
+        {
+            var decompressedBytes = BLTE.Parse(compressedHandle);
+            return Open(new InMemoryDataSupplier(decompressedBytes));
+        }
 
         public static Install Open<T>(T fileData) where T : IBinaryDataSupplier
         {
@@ -71,7 +79,7 @@ namespace Blizztrack.Framework.TACT.Implementation
             return new Install(version, tags, entries);
         }
 
-        public Install(int version, Tag[] tags, Entry[] entries)
+        private Install(int version, Tag[] tags, Entry[] entries)
         {
             Version = version;
             Tags = tags;

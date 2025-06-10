@@ -1,4 +1,5 @@
 ﻿using Blizztrack.Framework.TACT;
+using Blizztrack.Framework.TACT.Implementation;
 using Blizztrack.Framework.TACT.Resources;
 using Blizztrack.Options;
 
@@ -10,6 +11,7 @@ namespace Blizztrack.Services
 {
 
     public abstract class FileRepository<T>(IServiceProvider serviceProvider, string fileIdentifier, Func<ExpirySettings, TimeSpan> durationGetter)
+        where T : class, IResourceParser<T>
     {
         private IOptionsMonitor<Settings> _settings = serviceProvider.GetRequiredService<IOptionsMonitor<Settings>>();
         private IResourceLocator _resourceLocator = serviceProvider.GetRequiredService<IResourceLocator>();
@@ -18,20 +20,34 @@ namespace Blizztrack.Services
             CacheName = $"cache:{fileIdentifier}",
         });
 
-        public ValueTask<T> Obtain<K>(K encodingKey, CancellationToken stoppingToken) where K : IEncodingKey<K>, IKey<K>, allows ref struct
-            => Obtain(encodingKey.AsHexString(), stoppingToken);
+        public ValueTask<T> Obtain<C, E>(string productCode, C contentKey, E encodingKey, CancellationToken stoppingToken)
+            where C : IContentKey<C>, IKey<C>
+            where E : IEncodingKey<E>, IKey<E>
+            => _cache.GetOrSetAsync($"{fileIdentifier}:{encodingKey}",
+                async token => await OpenHandle(productCode, encodingKey, contentKey, token),
+                new FusionCacheEntryOptions() {
+                    Duration = durationGetter(_settings.CurrentValue.Cache.Expirations),
+                }, stoppingToken);
 
-        public ValueTask<T> Obtain(string encodingKey, CancellationToken stoppingToken)
-            => _cache.GetOrSetAsync($"{fileIdentifier}:{encodingKey}", async token => await OpenHandle(encodingKey, token), new FusionCacheEntryOptions() {
-                Duration = durationGetter(_settings.CurrentValue.Cache.Expirations),
-            }, stoppingToken);
+        public ValueTask<T> Obtain<E>(string productCode, E encodingKey, CancellationToken stoppingToken)
+            where E : IEncodingKey<E>, IKey<E>
+            => _cache.GetOrSetAsync($"{fileIdentifier}:{encodingKey}",
+                async token => await OpenHandle(productCode, encodingKey, token),
+                new FusionCacheEntryOptions()
+                {
+                    Duration = durationGetter(_settings.CurrentValue.Cache.Expirations),
+                }, stoppingToken);
 
-        private async Task<T> OpenHandle(string key, CancellationToken stoppingToken)
+        private Task<T> OpenHandle<E, C>(string productCode, E encodingKey, C contentKey, CancellationToken stoppingToken)
+            where C : IContentKey<C>, IKey<C>
+            where E : IEncodingKey<E>, IKey<E>
         {
-            var descriptor = new ResourceDescriptor(ResourceType.Data, key);
-            var resourceHandle = await _resourceLocator.OpenHandleAsync(descriptor, stoppingToken);
-
-            return Open(resourceHandle);
+            return _resourceLocator.OpenCompressed<E, C, T>(productCode, encodingKey, contentKey, stoppingToken);
+        }
+        private Task<T> OpenHandle<E>(string productCode, E encodingKey, CancellationToken stoppingToken)
+            where E : IEncodingKey<E>, IKey<E>
+        {
+            return _resourceLocator.OpenCompressed<T, E>(productCode, encodingKey, stoppingToken);
         }
 
         protected abstract T Open(ResourceHandle resourceHandle);

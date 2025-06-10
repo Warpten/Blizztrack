@@ -1,7 +1,10 @@
 ﻿using Blizztrack.Framework.TACT;
 using Blizztrack.Persistence.Entities;
+using Blizztrack.Persistence.Translators;
 
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Query;
+using Microsoft.EntityFrameworkCore.Query.SqlExpressions;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace Blizztrack.Persistence
@@ -13,6 +16,7 @@ namespace Blizztrack.Persistence
         public DbSet<ProductConfig> Configs { get; private set; }
         public DbSet<Product> Products { get; private set; }
         public DbSet<Endpoint> Endpoints { get; private set; }
+        public DbSet<KnownResource> KnownResources { get; private set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -28,6 +32,9 @@ namespace Blizztrack.Persistence
                 nameof(ProductConfig.Config),
                 nameof(ProductConfig.Name),
                 nameof(ProductConfig.BuildID)).IsUnique(true));
+
+            modelBuilder.Entity<KnownResource>().HasIndex(e => e.EncodingKey).HasMethod("hash");
+            modelBuilder.Entity<KnownResource>().HasIndex(e => e.ContentKey).HasMethod("hash");
         }
 
         protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)

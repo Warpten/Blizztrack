@@ -44,6 +44,8 @@ namespace Blizztrack.Framework.TACT.Implementation
         public readonly int Flags;
         private readonly ChunkInfo[] _chunks;
 
+        public int DecompressedSize => _chunks[^1].Decompressed.End.Value;
+
         private BLTE(int flags, ChunkInfo[] chunks)
         {
             Flags = flags;

@@ -9,16 +9,6 @@ using Polly.Retry;
 
 namespace Blizztrack.Services
 {
-    file class TransferContext
-    {
-        public required IAsyncEnumerator<PatchEndpoint> Endpoints { get; init; }
-        public required HttpClient Client { get; init; }
-    
-        public required RangeHeaderValue? Range { get; init; }
-    }
-    
-    public readonly record struct ContentQueryResult(HttpStatusCode StatusCode, Stream Body);
-    
     /// <summary>
     /// Provides access to data off of Blizzard's CDNs.
     /// </summary>
@@ -45,49 +35,5 @@ namespace Blizztrack.Services
             })
             .Build();
 
-        public async ValueTask<ContentQueryResult> Query(IAsyncEnumerable<PatchEndpoint> hosts, ResourceDescriptor descriptor, CancellationToken stoppingToken)
-        {
-            var transferContext = new TransferContext()
-            {
-                Client = _clientFactory.CreateClient(),
-                Range = descriptor.Offset != 0 ? new RangeHeaderValue(descriptor.Offset, descriptor.Offset + descriptor.Length) : default,
-                Endpoints = hosts.GetAsyncEnumerator(stoppingToken),
-            };
-
-            var resilienceContext = ResilienceContextPool.Shared.Get(stoppingToken);
-            var result = await _acquisitionPipeline.ExecuteOutcomeAsync(async (context, state) =>
-            {
-                if (!await state.Endpoints.MoveNextAsync())
-                    return Outcome.FromResult(new ContentQueryResult(HttpStatusCode.NotFound, Stream.Null));
-
-                var server = state.Endpoints.Current;
-                HttpRequestMessage requestMessage = new(HttpMethod.Get, $"http://{server.Host}/{server.DataStem}/{descriptor.RemotePath}")
-                {
-                    Headers = { Range = state.Range }
-                };
-
-                var response = await state.Client.SendAsync(requestMessage, HttpCompletionOption.ResponseHeadersRead, stoppingToken);
-                response.EnsureSuccessStatusCode();
-
-                var dataStream = await response.Content.ReadAsStreamAsync();
-                var transferInformation = new ContentQueryResult(response.StatusCode, dataStream);
-
-                return Outcome.FromResult(transferInformation);
-            }, resilienceContext, transferContext);
-
-            return result.Result;
-        }
-    
-        public ValueTask<ContentQueryResult> Query(string region, ResourceDescriptor descriptor, CancellationToken stoppingSource)
-        {
-            using var scope = serviceProvider.CreateScope();
-            var databaseContext = scope.ServiceProvider.GetRequiredService<DatabaseContext>();
-
-            var eligibleHosts = databaseContext.Endpoints
-                .Select(e => new PatchEndpoint(e.Host, e.DataPath, e.ConfigurationPath))
-                .ToAsyncEnumerable();
-
-            return Query(eligibleHosts, descriptor, stoppingSource);
-        }
     }
 }

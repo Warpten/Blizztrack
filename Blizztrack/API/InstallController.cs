@@ -1,5 +1,6 @@
 ﻿using Asp.Versioning;
 
+using Blizztrack.Framework.TACT;
 using Blizztrack.Framework.TACT.Implementation;
 using Blizztrack.Services;
 
@@ -96,7 +97,7 @@ namespace Blizztrack.API
         }
 
         private ValueTask<Install> OpenInstall(string fileName, CancellationToken stoppingToken)
-            => installRepository.Obtain(fileName, stoppingToken);
+            => installRepository.Obtain("xx", fileName.AsKey<EncodingKey>(), stoppingToken);
 
         public record InstallEntry(string Name, string ContentKey);
         public record DetailedInstallEntry(string Name, string ContentKey, InstallTag[] Tags);

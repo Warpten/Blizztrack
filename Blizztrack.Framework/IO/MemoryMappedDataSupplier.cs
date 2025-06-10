@@ -17,7 +17,7 @@ namespace Blizztrack.Framework.IO
         public unsafe MemoryMappedDataSupplier(ResourceHandle resourceHandle)
         {
             var memoryMappedFile = resourceHandle.AsMappedFile();
-            _accessor = memoryMappedFile.CreateViewAccessor(resourceHandle.Offset, resourceHandle.Length);
+            _accessor = memoryMappedFile.CreateViewAccessor(resourceHandle.Offset, resourceHandle.Length, MemoryMappedFileAccess.Read);
             _offset = (nint) resourceHandle.Offset;
             _length = resourceHandle.Length;
 

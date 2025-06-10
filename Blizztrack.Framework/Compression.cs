@@ -27,6 +27,27 @@ namespace Blizztrack.Framework
 
         public static readonly Compression Instance = new Compression();
 #else
+        static Compression()
+        {
+            static nint getNativeHandle()
+            {
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                    return NativeLibrary.Load("System.IO.Compression.Native.dll");
+
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+                    return NativeLibrary.Load("libSystem.IO.Compression.Native.dylib");
+
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+                    return NativeLibrary.Load("libSystem.IO.Compression.Native.so");
+
+                return nint.Zero;
+            }
+            ;
+
+            var nativeHandle = getNativeHandle();
+            Instance = new Compression(functionName => NativeLibrary.GetExport(nativeHandle, functionName));
+        }
+
         private readonly delegate*<ref Stream, int, int> InitializeInflate;
         private readonly delegate*<ref Stream, int, int> Inflate;
         private readonly delegate*<ref Stream, int> InflateEnd;
@@ -38,27 +59,7 @@ namespace Blizztrack.Framework
             InflateEnd = (delegate*<ref Stream, int>)loader("CompressionNative_InflateEnd").ToPointer();
         }
 
-        public static Compression Instance => InstanceSupplier.Value;
-
-        private static readonly Lazy<Compression> InstanceSupplier = new (() =>
-        {
-            static nint getNativeHandle() {
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                    return NativeLibrary.Load("System.IO.Compression.Native.dll");
-
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-                    return NativeLibrary.Load("libSystem.IO.Compression.Native.dylib");
-
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-                    return NativeLibrary.Load("libSystem.IO.Compression.Native.so");
-
-                return nint.Zero;
-            };
-
-            var nativeHandle = getNativeHandle();
-
-            return new Compression(functionName => NativeLibrary.GetExport(nativeHandle, functionName));
-        });
+        public static Compression Instance { get; }
 #endif
 
         public bool Execute(ReadOnlySpan<byte> input, Span<byte> output)
@@ -96,18 +97,6 @@ namespace Blizztrack.Framework
             private nint InternalState;
             public uint AvailableIn = (uint) input.Length;
             private uint AvailableOut = (uint) output.Length;
-            
-            public void SetInput(ReadOnlySpan<byte> input)
-            {
-                NextIn = (byte*) Unsafe.AsPointer(ref MemoryMarshal.GetReference(input));
-                AvailableIn = (uint) input.Length;
-            }
-
-            public void SetOutput(Span<byte> output)
-            {
-                NextOut = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetReference(output));
-                AvailableOut = (uint) output.Length;
-            }
         }
     }
 }

@@ -9,33 +9,17 @@ namespace Blizztrack.Services
     /// This service provides access to files on disk, given a <see cref="ResourceDescriptor" />.
     /// </summary>
     /// <param name="settings"></param>
-    public class LocalCacheService(IOptionsMonitor<Settings> settings): ICacheService
+    public class LocalCacheService(IOptionsMonitor<Settings> settings)
     {
         public string CreatePath(string relativePath)
         {
-            DirectoryInfo rootDirectory = new(settings.CurrentValue.Cache.Path);
-
-            var filePath = Path.Combine(rootDirectory.FullName, relativePath);
+            var filePath = Path.Combine(settings.CurrentValue.Cache.Path, relativePath);
             Directory.GetParent(filePath)?.Create();
             return filePath;
         }
 
-        public ResourceHandle OpenHandle(ResourceDescriptor descriptor)
-        {
-            DirectoryInfo rootDirectory = new(settings.CurrentValue.Cache.Path);
-            if (rootDirectory.Exists)
-            {
-                var localPath = new FileInfo(Path.Combine(rootDirectory.FullName, descriptor.LocalPath));
-                if (localPath.Exists)
-                    return new ResourceHandle(localPath);
-            }
+        public void Write(string filePath, byte[] fileData) => File.WriteAllBytes(CreatePath(filePath), fileData);
 
-            return default;
-        }
-    }
-
-    public interface ICacheService
-    {
-        public ResourceHandle OpenHandle(ResourceDescriptor descriptor);
+        public ResourceHandle OpenHandle(ResourceDescriptor descriptor) => new (CreatePath(descriptor.LocalPath));
     }
 }

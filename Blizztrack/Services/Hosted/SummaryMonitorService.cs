@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 using System.Linq.Expressions;
+using System.Net;
 using System.Runtime.InteropServices;
 
 namespace Blizztrack.Services.Hosted
@@ -99,6 +100,8 @@ namespace Blizztrack.Services.Hosted
                                 // Coherent data; update.
                                 cacheEntry!.CDN = cdns.SequenceNumber;
 
+                                await _mediatorService.Products.OnCDNs.Writer.WriteAsync((productUpdate.Key, cdns), stoppingToken);
+
                                 // Also populate endpoints
                                 cacheEntry.Endpoints.Clear();
                                 foreach (var endpoint in cdns.Entries.SelectMany(e => e.Hosts.Select(h => (Host: h, e.Name, e.ConfigPath, e.Path)))
@@ -119,34 +122,39 @@ namespace Blizztrack.Services.Hosted
                         {
                             var versions = await Commands.GetProductVersions(productUpdate.Key, queryEndpoint.Host, queryEndpoint.Port, stoppingToken);
                             if (versions.SequenceNumber == sequenceNumbers[(int) SequenceNumberType.Version])
+                            {
+
                                 cacheEntry!.Version = versions.SequenceNumber;
 
-                            // Look through the PSV file, aggregating rows that are identical (diregarding the region), and store any new tuple in database.
-                            foreach (var version in versions.Entries.GroupBy(v => (v.BuildConfig, v.CDNConfig, v.KeyRing, v.ProductConfig, v.BuildID, v.VersionsName)))
-                            {
-                                var regions = version.Select(v => v.Region);
+                                await _mediatorService.Products.OnVersions.Writer.WriteAsync((productUpdate.Key, versions), stoppingToken);
 
-                                if (!databaseContext.Configs.Any(c => c.BuildConfig == version.Key.BuildConfig
-                                    && c.CDNConfig == version.Key.CDNConfig
-                                    && c.KeyRing == version.Key.KeyRing
-                                    && c.Config == version.Key.ProductConfig
-                                    && c.BuildID == version.Key.BuildID
-                                    && c.Name == version.Key.VersionsName))
+                                // Look through the PSV file, aggregating rows that are identical (diregarding the region), and store any new tuple in database.
+                                foreach (var version in versions.Entries.GroupBy(v => (v.BuildConfig, v.CDNConfig, v.KeyRing, v.ProductConfig, v.BuildID, v.VersionsName)))
                                 {
-                                    // New entry.
-                                    productConfigStaging.Add(new ProductConfig()
-                                    {
-                                        BuildConfig = version.Key.BuildConfig,
-                                        CDNConfig = version.Key.CDNConfig,
-                                        BuildID = version.Key.BuildID,
-                                        Config = version.Key.ProductConfig,
-                                        KeyRing = version.Key.KeyRing,
-                                        Regions = [.. regions],
-                                        Name = version.Key.VersionsName,
-                                        Product = cacheEntry!
-                                    });
-                                }
+                                    var regions = version.Select(v => v.Region);
 
+                                    if (!databaseContext.Configs.Any(c => c.BuildConfig == version.Key.BuildConfig
+                                        && c.CDNConfig == version.Key.CDNConfig
+                                        && c.KeyRing == version.Key.KeyRing
+                                        && c.Config == version.Key.ProductConfig
+                                        && c.BuildID == version.Key.BuildID
+                                        && c.Name == version.Key.VersionsName))
+                                    {
+                                        // New entry.
+                                        productConfigStaging.Add(new ProductConfig()
+                                        {
+                                            BuildConfig = version.Key.BuildConfig,
+                                            CDNConfig = version.Key.CDNConfig,
+                                            BuildID = version.Key.BuildID,
+                                            Config = version.Key.ProductConfig,
+                                            KeyRing = version.Key.KeyRing,
+                                            Regions = [.. regions],
+                                            Name = version.Key.VersionsName,
+                                            Product = cacheEntry!
+                                        });
+                                    }
+
+                                }
                             }
                         }
 
@@ -154,7 +162,11 @@ namespace Blizztrack.Services.Hosted
                         {
                             var bgdl = await Commands.GetProductBGDL(productUpdate.Key, queryEndpoint.Host, queryEndpoint.Port, stoppingToken);
                             if (bgdl.SequenceNumber == sequenceNumbers[(int) SequenceNumberType.BGDL])
+                            {
                                 cacheEntry!.BGDL = bgdl.SequenceNumber;
+
+                                await _mediatorService.Products.OnBGDL.Writer.WriteAsync((productUpdate.Key, bgdl), stoppingToken);
+                            }
                         }
                     }
 

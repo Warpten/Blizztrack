@@ -25,9 +25,19 @@ namespace Blizztrack.Options
         /// <summary>
         /// A set of extraneous CDNs to use when querying files.
         /// </summary>
-        public required string[] CDNs { get; init; }
+        public required CacheEndpoint[] CDNs { get; init; }
 
         public required ExpirySettings Expirations { get; init; }
+    }
+
+    public class CacheEndpoint
+    {
+        public required string[] Hosts { get; init; }
+        public required string Data { get; init; }
+        public required string Configuration { get; init; }
+
+        public required string[] Products { get; init; }
+        public required string[] Regions { get; init; }
     }
 
     public class ExpirySettings

@@ -60,11 +60,21 @@
 
             while (startOffset <= endOffset)
             {
+                var anyIteratorChanged = false;
                 if (left && filter(reference[startOffset]))
+                {
+                    anyIteratorChanged = true;
                     ++startOffset;
+                }
 
                 if (right && filter(reference[endOffset]))
+                {
+                    anyIteratorChanged = true;
                     --endOffset;
+                }
+
+                if (!anyIteratorChanged)
+                    break;
             }
 
             return new(startOffset, endOffset + 1);
@@ -79,16 +89,14 @@
             {
                 if (left)
                 {
-                    for (var i = 0; i < items.Length; ++i)
-                        if (cmp.Equals(reference[startOffset], items[i]))
-                            ++startOffset;
+                    for (var i = 0; i < items.Length && cmp.Equals(reference[startOffset], items[i]); ++i)
+                        ++startOffset;
                 }
 
                 if (right)
                 {
-                    for (var i = 0; i < items.Length; ++i)
-                        if (cmp.Equals(reference[endOffset], items[i]))
-                            --endOffset;
+                    for (var i = 0; i < items.Length && cmp.Equals(reference[endOffset], items[i]); ++i)
+                        --endOffset;
                 }
             }
 

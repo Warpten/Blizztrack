@@ -6,6 +6,7 @@ using Blizztrack.Shared.Extensions;
 
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Net.Http.Headers;
 
 using Encoding = Blizztrack.Framework.TACT.Implementation.Encoding;
 
@@ -19,9 +20,9 @@ namespace Blizztrack.Framework.TACT
     /// consider acquiring them from a <see cref="FileSystemProvider"/>.
     /// </para>
     /// </summary>
-    public class FileSystem(string region, EncodingKey[] archives, Encoding? encoding = default, Root? root = default, Install? install = default, FileIndex? fileIndex = default, GroupIndex? groupIndex = default)
+    public class FileSystem(string product, EncodingKey[] archives, Encoding? encoding = default, Root? root = default, Install? install = default, FileIndex? fileIndex = default, GroupIndex? groupIndex = default)
     {
-        internal readonly string _region = region;
+        internal readonly string _product = product;
         internal readonly EncodingKey[] Archives = archives;
         internal readonly Encoding? Encoding = encoding;
         internal readonly Root? Root = root;
@@ -57,10 +58,11 @@ namespace Blizztrack.Framework.TACT
         }
 
         [Experimental(diagnosticId: "BT001")]
-        public Enumerator Resources => new(Archives, GroupIndex, FileIndex);
+        public Enumerator Resources => new(_product, Archives, GroupIndex, FileIndex);
 
-        public readonly ref struct Enumerator(EncodingKey[] archives, AbstractIndex? groupIndex, AbstractIndex? fileIndex)
+        public readonly ref struct Enumerator(string product, EncodingKey[] archives, AbstractIndex? groupIndex, AbstractIndex? fileIndex)
         {
+            private readonly string _product = product;
             private readonly EncodingKey[] _archives = archives;
 #pragma warning disable BT002
             private readonly AbstractIndex.Enumerator _groupIndex = groupIndex == null ? default : groupIndex.Entries;
@@ -77,11 +79,11 @@ namespace Blizztrack.Framework.TACT
                 {
                     var currentValue = _groupIndex.Current;
                     if (currentValue != default)
-                        return new ResourceDescriptor(ResourceType.Data, currentValue.EncodingKey.AsHexString(), currentValue.Offset, currentValue.Length);
+                        return new ResourceDescriptor(ResourceType.Data, _product, currentValue.EncodingKey.AsHexString(), currentValue.Offset, currentValue.Length);
 
                     currentValue = _fileIndex.Current;
                     if (currentValue != default)
-                        return new ResourceDescriptor(ResourceType.Data, _archives[currentValue.ArchiveIndex].AsHexString(), currentValue.Offset, currentValue.Length);
+                        return new ResourceDescriptor(ResourceType.Data, _product, _archives[currentValue.ArchiveIndex].AsHexString(), currentValue.Offset, currentValue.Length);
 
                     return default;
                 }
@@ -95,7 +97,7 @@ namespace Blizztrack.Framework.TACT
             {
                 var indexResult = GroupIndex.FindEncodingKey(encodingKey);
                 if (indexResult)
-                    return new ResourceDescriptor(ResourceType.Data,
+                    return new ResourceDescriptor(ResourceType.Data, _product,
                         Archives.UnsafeIndex(indexResult.ArchiveIndex).AsHexString(), indexResult.Offset, indexResult.Length);
             }
 
@@ -104,12 +106,12 @@ namespace Blizztrack.Framework.TACT
                 // Try non-archived files
                 var indexResult = FileIndex.FindEncodingKey(encodingKey);
                 if (indexResult)
-                    return new ResourceDescriptor(ResourceType.Data,
+                    return new ResourceDescriptor(ResourceType.Data, _product,
                         Archives.UnsafeIndex(indexResult.ArchiveIndex).AsHexString(), indexResult.Offset, indexResult.Length);
             }
 
             // Assume the file is a self-contained archive
-            return new ResourceDescriptor(ResourceType.Data, encodingKey.AsHexString());
+            return new ResourceDescriptor(ResourceType.Data, _product, encodingKey.AsHexString());
         }
 
         /// <summary>
@@ -122,27 +124,27 @@ namespace Blizztrack.Framework.TACT
         /// <param name="stoppingToken">A stop token for asynchronous operations.</param>
         /// <returns></returns>
         public async static Task<FileSystem> Open<T>(BuildConfiguration buildConfiguration, ServerConfiguration serverConfiguration,
-            string region, T locator, CancellationToken stoppingToken)
+            string product, T locator, CancellationToken stoppingToken)
             where T : IResourceLocator
         {
             Debug.Assert(buildConfiguration.Encoding.ContentKey.Key != ContentKey.Zero);
 
             // 1. Load archive-group (or each individual indice, aggregated in a single IIndex implementation).
-            var indicesTask = OpenIndices(buildConfiguration, serverConfiguration, region, locator, stoppingToken);
+            var indicesTask = OpenIndices(buildConfiguration, serverConfiguration, product, locator, stoppingToken);
 
             // 2. Load file-index (if it exists, but ignore if it doesn't)
-            var fileIndex = Open(serverConfiguration.FileIndex.Key, region, locator, stoppingToken)
+            var fileIndex = Open(serverConfiguration.FileIndex.Key, product, locator, stoppingToken)
                 .ContinueWith(static x => x.Exception == default ? null : new FileIndex(x.Result));
 
             // 3. Load encoding (must exist)
-            var encodingHandle = await Open(buildConfiguration.Encoding.EncodingKey, region, locator, stoppingToken);
+            var encodingHandle = await Open(buildConfiguration.Encoding.EncodingKey, product, locator, stoppingToken);
             var encodingInstance = Encoding.Open(new MemoryMappedDataSupplier(encodingHandle));
 
             // 4. Load root (if it exists)
-            var rootHandle = Open(buildConfiguration.Root, region, locator, encodingInstance, stoppingToken);
+            var rootHandle = Open(buildConfiguration.Root, product, locator, encodingInstance, stoppingToken);
 
             // 5. Load install (if it exists)
-            var installHandle = Open(buildConfiguration.Install, region, locator, encodingInstance, stoppingToken);
+            var installHandle = Open(buildConfiguration.Install, product, locator, encodingInstance, stoppingToken);
 
             // Execute tasks in parallel and wait for everything.
             await Task.WhenAll(rootHandle, installHandle, indicesTask, fileIndex);
@@ -150,27 +152,27 @@ namespace Blizztrack.Framework.TACT
             var rootInstance = rootHandle.Result != default ? new Root(rootHandle.Result) : null;
             var installInstance = installHandle.Result != default ? Install.Open(new MemoryMappedDataSupplier(installHandle.Result)) : null;
 
-            return new FileSystem(region, serverConfiguration.Archives, encodingInstance, rootInstance, installInstance);
+            return new FileSystem(product, serverConfiguration.Archives, encodingInstance, rootInstance, installInstance);
         }
 
         private static async Task<ResourceHandle> Open<T, U>((SizeAware<T> Content, SizeAware<U> Encoding) pair,
-            string region,
+            string product,
             IResourceLocator locator,
             Encoding encoding,
             CancellationToken stoppingToken)
             where T : IContentKey<T>, IKey
             where U : IEncodingKey<U>, IKey
         {
-            var decompressedDescriptor = new ResourceDescriptor(ResourceType.Data, pair.Encoding.Key.AsHexString(), 0, pair.Encoding.Size);
-            var decompressedHandle = await locator.OpenHandleAsync(region, decompressedDescriptor, stoppingToken);
+            var decompressedDescriptor = new ResourceDescriptor(ResourceType.Data, product, pair.Encoding.Key.AsHexString(), 0, pair.Encoding.Size);
+            var decompressedHandle = await locator.OpenCompressedHandle(product, pair.Encoding.Key, pair.Content.Key, stoppingToken);
             if (decompressedHandle != default)
                 return decompressedHandle;
 
-            return await Open(pair.Content, region, locator, encoding, stoppingToken);
+            return await Open(pair.Content, product, locator, encoding, stoppingToken);
         }
 
         private static async Task<ResourceHandle> Open<T>(SizeAware<T> contentKey,
-            string region,
+            string product,
             IResourceLocator locator,
             Encoding encoding,
             CancellationToken stoppingToken)
@@ -182,24 +184,17 @@ namespace Blizztrack.Framework.TACT
 
             var queryTasks = new Task<ResourceHandle>[encodingEntry.Count];
             for (var i = 0; i < encodingEntry.Count; ++i)
-            {
-                var rootDescriptor = new ResourceDescriptor(ResourceType.Data, encodingEntry[i].AsSpan(), length: contentKey.Size);
-                queryTasks[i] = locator.OpenHandleAsync(region, rootDescriptor, stoppingToken);
-            }
+                queryTasks[i] = locator.OpenCompressedHandle(product, encodingEntry[i], contentKey.Key, stoppingToken);
 
             await foreach (var queryTask in Task.WhenEach(queryTasks))
-            {
-                if (!queryTask.IsCompletedSuccessfully)
-                    continue;
-
-                return queryTask.Result;
-            }
+                if (queryTask.IsCompletedSuccessfully)
+                    return queryTask.Result;
 
             return default;
         }
 
         private static async Task<ResourceHandle> Open<T>(T contentKey,
-            string region,
+            string product,
             IResourceLocator locator,
             Encoding encoding,
             CancellationToken stoppingToken)
@@ -211,55 +206,42 @@ namespace Blizztrack.Framework.TACT
 
             var queryTasks = new Task<ResourceHandle>[encodingEntry.Count];
             for (var i = 0; i < encodingEntry.Count; ++i)
-            {
-                var rootDescriptor = new ResourceDescriptor(ResourceType.Data, encodingEntry[i].AsSpan());
-                queryTasks[i] = locator.OpenHandleAsync(region, rootDescriptor, stoppingToken);
-            }
+                queryTasks[i] = locator.OpenCompressedHandle(product, encodingEntry[i], contentKey, stoppingToken);
 
             await foreach (var queryTask in Task.WhenEach(queryTasks))
-            {
-                if (!queryTask.IsCompletedSuccessfully)
-                    continue;
-
-                return queryTask.Result;
-            }
+                if (queryTask.IsCompletedSuccessfully)
+                    return queryTask.Result;
 
             return default;
         }
 
         private static async Task<ResourceHandle> Open<T>(T encodingKey,
-            string region,
+            string product,
             IResourceLocator locator,
             CancellationToken stoppingToken)
             where T : IEncodingKey<T>, IKey
-        {
-            var encodingDescriptor = new ResourceDescriptor(ResourceType.Data, encodingKey.AsHexString());
-            return await locator.OpenHandleAsync(region, encodingDescriptor, stoppingToken);
-        }
+            => await locator.OpenCompressedHandle(product, encodingKey, stoppingToken);
 
         private static async Task<ResourceHandle> Open<T>(SizeAware<T> encodingKey,
-            string region,
+            string product,
             IResourceLocator locator,
             CancellationToken stoppingToken)
             where T : IEncodingKey<T>, IKey
-        {
-            var encodingDescriptor = new ResourceDescriptor(ResourceType.Data, encodingKey.Key.AsHexString(), 0, encodingKey.Size);
-            return await locator.OpenHandleAsync(region, encodingDescriptor, stoppingToken);
-        }
+            => await locator.OpenCompressedHandle(product, encodingKey.Key, stoppingToken);
 
         private static async Task<IIndex[]> OpenIndices(BuildConfiguration buildConfiguration,
             ServerConfiguration serverConfiguration,
-            string region,
+            string product,
             IResourceLocator locator,
             CancellationToken stoppingToken)
         {
             if (serverConfiguration.ArchiveGroup == default)
             {
                 var indicesTasks = serverConfiguration.Archives
-                    .Select(archive => new ResourceDescriptor(ResourceType.Indice, $"{archive.AsHexString()}.index"))
+                    .Select(archive => new ResourceDescriptor(ResourceType.Indice, product, $"{archive.AsHexString()}.index"))
                     .Select(async (descriptor, index) =>
                     {
-                        var resourceHandle = await locator.OpenHandleAsync(region, descriptor, stoppingToken);
+                        var resourceHandle = await locator.OpenHandle(descriptor, stoppingToken);
                         return new ArchiveIndex(resourceHandle, (short) index);
                     });
 
@@ -275,8 +257,8 @@ namespace Blizztrack.Framework.TACT
             }
             else
             {
-                var descriptor = new ResourceDescriptor(ResourceType.Indice, $"{serverConfiguration.ArchiveGroup.AsHexString()}.index");
-                var resourceHandle = await locator.OpenHandleAsync(region, descriptor, stoppingToken);
+                var descriptor = new ResourceDescriptor(ResourceType.Indice, product, $"{serverConfiguration.ArchiveGroup.AsHexString()}.index");
+                var resourceHandle = await locator.OpenHandle(descriptor, stoppingToken);
                 return [new GroupIndex(resourceHandle)];
             }
         }

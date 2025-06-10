@@ -6,17 +6,27 @@ using System.Runtime.CompilerServices;
 using static Blizztrack.Shared.Extensions.BinarySearchExtensions;
 using Blizztrack.Shared;
 using Blizztrack.Framework.IO;
+using Blizztrack.Framework.TACT.Resources;
 
 namespace Blizztrack.Framework.TACT.Implementation
 {
     /// <summary>
     /// An implementation of an encoding file.
     /// </summary>
-    public sealed class Encoding
+    public sealed class Encoding : IResourceParser<Encoding>
     {
         private readonly IBinaryDataSupplier _dataSupplier;
         private readonly EncodingSchema _header;
         private readonly Lazy<string[]> _encodingSpecs;
+
+        public static Encoding OpenResource(ResourceHandle decompressedHandle)
+            => Open(new MemoryMappedDataSupplier(decompressedHandle));
+
+        public static Encoding OpenCompressedResource(ResourceHandle compressedHandle)
+        {
+            var decompressedBytes = BLTE.Parse(compressedHandle);
+            return Open(new InMemoryDataSupplier(decompressedBytes));
+        }
 
         public static Encoding Open<T>(T dataSource) where T : IBinaryDataSupplier
         {
@@ -112,7 +122,7 @@ namespace Blizztrack.Framework.TACT.Implementation
             var specIndex = fileData[ekeySize..].ReadInt32BE();
             var encodedFileSize = (ulong) fileData[(ekeySize + 4)..].ReadInt40BE();
 
-            return new(new(encodingKey, specIndex, encodedFileSize), fileData[ekeySize + 4 + 5]);
+            return new(new(encodingKey, specIndex, encodedFileSize), ekeySize + 4 + 5);
         }
 
         private static ParsedValue<Entry> ParseEntry(ReadOnlySpan<byte> fileData, int ekeySize, int ckeySize)
@@ -356,7 +366,7 @@ namespace Blizztrack.Framework.TACT.Implementation
         /// Enumerates entries within a table.
         /// </summary>
         /// <remarks>This object has <see cref="IDisposable"/> semantics and <b>must</b> be used in an <c>using</c> block.</remarks>
-        public unsafe class Enumerator<E> where E : notnull, allows ref struct
+        public unsafe struct Enumerator<E> where E : notnull, allows ref struct
         {
             private readonly IBinaryDataSupplier _memoryManager;
             private readonly delegate*<ReadOnlySpan<byte>, int, int, ParsedValue<E>> _parser;

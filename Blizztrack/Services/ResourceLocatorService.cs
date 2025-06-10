@@ -1,55 +1,258 @@
-﻿using Blizztrack.Framework.TACT.Resources;
+﻿using Blizztrack.Framework.TACT;
+using Blizztrack.Framework.TACT.Implementation;
+using Blizztrack.Framework.TACT.Resources;
+using Blizztrack.Options;
 using Blizztrack.Persistence;
+
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+
+using Polly;
+using Polly.Retry;
+
+using System.Net;
+using System.Net.Http.Headers;
 
 namespace Blizztrack.Services
 {
+    file class TransferContext
+    {
+        public required IEnumerator<PatchEndpoint> Endpoints { get; init; }
+        public required HttpClient Client { get; init; }
+
+        public required RangeHeaderValue? Range { get; init; }
+    }
+
+    public readonly record struct ContentQueryResult(HttpStatusCode StatusCode, Stream Body);
+
     /// <summary>
     /// Provides utility methods to access resources, optionally downloading them from Blizzard's CDNs.
     /// </summary>
-    /// <param name="contentService"></param>
+    /// <param name="clientFactory"></param>
     /// <param name="localCache"></param>
     /// <param name="serviceProvider"></param>
-    public class ResourceLocatorService(ContentService contentService, LocalCacheService localCache, IServiceProvider serviceProvider) : IResourceLocator
+    public class ResourceLocatorService : IResourceLocator
     {
-        public async Task<ResourceHandle> OpenHandleAsync(string region, ResourceDescriptor descriptor, CancellationToken stoppingToken)
+        private readonly LocalCacheService _localCache;
+        private readonly DatabaseContext _databaseContext;
+        private readonly IHttpClientFactory _clientFactory;
+        private readonly IOptionsMonitor<Settings> _settings;
+
+        public ResourceLocatorService(IHttpClientFactory clientFactory, IServiceProvider serviceProvider)
         {
-            var outcome = localCache.OpenHandle(descriptor);
-            if (outcome == default)
-                await Transfer(await contentService.Query(region, descriptor, stoppingToken), descriptor);
+            _clientFactory = clientFactory;
+            _localCache = serviceProvider.GetRequiredService<LocalCacheService>();
+            _settings = serviceProvider.GetRequiredService<IOptionsMonitor<Settings>>();
 
-            return localCache.OpenHandle(descriptor);
-        }
-        public async Task<ResourceHandle> OpenHandleAsync(ResourceDescriptor descriptor, CancellationToken stoppingToken)
-        {
-            using var scope = serviceProvider.CreateScope();
-            var databaseContext = scope.ServiceProvider.GetRequiredService<DatabaseContext>();
-
-            var endpoints = databaseContext.Endpoints.Select(e => new PatchEndpoint(e.Host, e.DataPath, e.ConfigurationPath))
-                .ToAsyncEnumerable();
-
-            var outcome = localCache.OpenHandle(descriptor);
-            if (outcome == default)
-                await Transfer(await contentService.Query(endpoints, descriptor, stoppingToken), descriptor);
-
-            return localCache.OpenHandle(descriptor);
+            var scope = serviceProvider.CreateScope();
+            _databaseContext = scope.ServiceProvider.GetRequiredService<DatabaseContext>();
         }
 
-        public async Task<ResourceHandle> OpenHandleAsync(IAsyncEnumerable<PatchEndpoint> endpoints, ResourceDescriptor descriptor, CancellationToken stoppingToken)
+        // VALIDATED API
+        public async Task<ResourceHandle> OpenHandle(ResourceDescriptor resourceDescriptor, CancellationToken stoppingToken)
         {
-            var outcome = localCache.OpenHandle(descriptor);
-            if (outcome != default)
-                return outcome;
+            var localHandle = _localCache.OpenHandle(resourceDescriptor);
+            if (localHandle.Exists || resourceDescriptor.Type == ResourceType.Decompressed)
+                return localHandle;
 
-            await Transfer(await contentService.Query(endpoints, descriptor, stoppingToken), descriptor);
-            return localCache.OpenHandle(descriptor);
+            var endpoints = GetEndpoints(resourceDescriptor.Product);
+            var backendQuery = await ExecuteQuery(endpoints, resourceDescriptor, stoppingToken);
+            if (backendQuery.StatusCode != HttpStatusCode.OK)
+                return default;
+
+            { // Create a stream from the local handle.
+                using var fileStream = new FileStream(localHandle.Path, FileMode.Create, FileAccess.Write, FileShare.None, 0, true);
+                await backendQuery.Body.CopyToAsync(fileStream, stoppingToken);
+                fileStream.Dispose();
+            }
+
+            return _localCache.OpenHandle(resourceDescriptor);
         }
 
-        private async Task Transfer(ContentQueryResult queryResult, ResourceDescriptor descriptor)
+        // VALIDATED API
+        public Task<T> OpenCompressed<E, C, T>(string productCode, E encodingKey, C contentKey, CancellationToken stoppingToken)
+            where E : IEncodingKey<E>, IKey, allows ref struct
+            where C : IContentKey<C>, IKey, allows ref struct
+            where T : class, IResourceParser<T>
         {
-            var localPath = localCache.CreatePath(descriptor.LocalPath);
-        
-            using var targetStream = new FileStream(localPath, FileMode.Create, FileAccess.Write, FileShare.None, 0, true);
-            await queryResult.Body.CopyToAsync(targetStream);
+            var compressedDescriptor = new ResourceDescriptor(ResourceType.Data, productCode, encodingKey.AsHexString());
+            var decompressedDescriptor = new ResourceDescriptor(ResourceType.Decompressed, productCode, contentKey.AsHexString());
+            return OpenCompressedImpl<T>(compressedDescriptor, decompressedDescriptor, stoppingToken);
+        }
+
+        public Task<ResourceHandle> OpenCompressedHandle<E, C>(string productCode, E encodingKey, C contentKey, CancellationToken stoppingToken)
+            where E : IEncodingKey<E>, IKey, allows ref struct
+            where C : IContentKey<C>, IKey, allows ref struct
+        {
+            var compressedDescriptor = new ResourceDescriptor(ResourceType.Data, productCode, encodingKey.AsHexString());
+            var decompressedDescriptor = new ResourceDescriptor(ResourceType.Decompressed, productCode, contentKey.AsHexString());
+            return OpenCompressedHandleImpl(compressedDescriptor, decompressedDescriptor, stoppingToken);
+        }
+
+        // VALIDATED API
+        public Task<T> OpenCompressed<T, E>(string productCode, E encodingKey, CancellationToken stoppingToken)
+            where E : IEncodingKey<E>, IKey, allows ref struct
+            where T : class, IResourceParser<T>
+            => OpenCompressedImpl<T>(new ResourceDescriptor(ResourceType.Data, productCode, encodingKey.AsHexString()), stoppingToken);
+
+        // VALIDATED API
+        public Task<ResourceHandle> OpenCompressedHandle<E>(string productCode, E encodingKey, CancellationToken stoppingToken)
+            where E : IEncodingKey<E>, IKey, allows ref struct
+            => OpenCompressedHandle(new ResourceDescriptor(ResourceType.Data, productCode, encodingKey.AsHexString()), stoppingToken);
+
+        public async Task<ResourceHandle> OpenCompressedHandle(ResourceDescriptor compressedDescriptor, CancellationToken stoppingToken)
+        {
+            // Look for this resource in the well known table.
+            // If it's well known, creeate a file on disk if it doesn't exist, decompressed the resource
+            // in it, and call the decompressed loader. Otherwise, call the compressed loader.
+            var knownResource = _databaseContext.KnownResources
+                .SingleOrDefault(e => e.EncodingKey.AsHexString() == compressedDescriptor.ArchiveName);
+
+            if (knownResource is not null)
+            {
+                var decompressedDescriptor = new ResourceDescriptor(ResourceType.Decompressed, compressedDescriptor.Product, knownResource.ContentKey.AsHexString());
+
+                return await OpenCompressedHandleImpl(compressedDescriptor, decompressedDescriptor, stoppingToken);
+            }
+            else
+            {
+                // Not a known resource... Just use the compressed handler.
+                return await OpenHandle(compressedDescriptor, stoppingToken);
+            }
+        }
+
+        // VALIDATED IMPLEMENTATION DETAIL
+        private async Task<ResourceHandle> OpenCompressedHandleImpl(ResourceDescriptor compressedDescriptor, ResourceDescriptor decompressedDescriptor, CancellationToken stoppingToken)
+        {
+            var decompressedHandle = await OpenHandle(decompressedDescriptor, stoppingToken);
+            if (decompressedHandle != default)
+                return decompressedHandle;
+
+            // Create the decompressed resource now.
+            var compressedHandle = await OpenHandle(compressedDescriptor, stoppingToken);
+            var decompressedData = BLTE.Parse(compressedHandle);
+
+            decompressedHandle.Create(decompressedData);
+            return decompressedHandle;
+        }
+
+        // VALIDATED IMPLEMENTATION DETAIL
+        private async Task<T> OpenCompressedImpl<T>(ResourceDescriptor compressedDescriptor, CancellationToken stoppingToken)
+            where T : class, IResourceParser<T>
+        {
+            // Look for this resource in the well known table.
+            // If it's well known, creeate a file on disk if it doesn't exist, decompressed the resource
+            // in it, and call the decompressed loader. Otherwise, call the compressed loader.
+            var knownResource = _databaseContext.KnownResources
+                .SingleOrDefault(e => e.EncodingKey.AsHexString() == compressedDescriptor.ArchiveName);
+
+            if (knownResource is not null)
+            {
+                var decompressedDescriptor = new ResourceDescriptor(ResourceType.Decompressed, compressedDescriptor.Product, knownResource.ContentKey.AsHexString());
+
+                return await OpenCompressedImpl<T>(compressedDescriptor, decompressedDescriptor, stoppingToken);
+            }
+            else
+            {
+                // Not a known resource... Just use the compressed handler.
+                var compressedHandle = await OpenHandle(compressedDescriptor, stoppingToken);
+                return T.OpenCompressedResource(compressedHandle);
+            }
+        }
+
+        // VALIDATED IMPLEMENTATION DETAIL
+        private async Task<T> OpenCompressedImpl<T>(ResourceDescriptor compressedDescriptor, ResourceDescriptor decompressedDescriptor, CancellationToken stoppingToken)
+            where T : class, IResourceParser<T>
+        {
+            var decompressedHandle = await OpenHandle(decompressedDescriptor, stoppingToken);
+            if (decompressedHandle != default)
+                return T.OpenResource(decompressedHandle);
+
+            // Create the decompressed resource now.
+            var compressedHandle = await OpenHandle(compressedDescriptor, stoppingToken);
+            var decompressedData = BLTE.Parse(compressedHandle);
+
+            _localCache.Write(decompressedDescriptor.LocalPath, decompressedData);
+            return T.OpenResource(_localCache.OpenHandle(decompressedDescriptor));
+        }
+
+        private readonly ResiliencePipeline<ContentQueryResult> _acquisitionPipeline = new ResiliencePipelineBuilder<ContentQueryResult>()
+            .AddConcurrencyLimiter(permitLimit: 20, queueLimit: 10)
+            .AddRetry(new RetryStrategyOptions<ContentQueryResult>()
+            {
+                BackoffType = DelayBackoffType.Constant,
+                MaxDelay = TimeSpan.Zero,
+                MaxRetryAttempts = int.MaxValue,
+                ShouldHandle = static args => args.Outcome switch
+                {
+                    { Exception: not null } => PredicateResult.True(),
+                    { Result.StatusCode: HttpStatusCode.NotFound } => PredicateResult.False(),
+                    _ => PredicateResult.False()
+                }
+            })
+            .Build();
+
+        /// <summary>
+        /// Gets all endpoints that match the product (and optionally the region) provided.
+        /// </summary>
+        /// <param name="productCode"></param>
+        /// <param name="region"></param>
+        /// <returns></returns>
+        private IEnumerable<PatchEndpoint> GetEndpoints(string productCode, string region = "xx")
+        {
+            var endpointsQuery = _databaseContext.Endpoints.Include(e => e.Products).Where(e => e.Products.Any(p => p.Code == productCode));
+            if (region != "xx")
+                endpointsQuery = endpointsQuery.Where(e => e.Regions.Contains(region));
+
+            var endpoints = endpointsQuery.Select(e => new PatchEndpoint(e.Host, e.DataPath, e.ConfigurationPath));
+
+            var configurationEndpoints = _settings.CurrentValue.Cache.CDNs
+                .Where(c => c.Products.Contains(productCode))
+                .SelectMany(c => c.Hosts.Select(h => new PatchEndpoint(h, c.Data, c.Configuration)));
+
+            return [.. endpoints, .. configurationEndpoints];
+        }
+
+        /// <summary>
+        /// Queries the given descriptor from the first endpoint that responds successfully.
+        /// </summary>
+        /// <param name="hosts"></param>
+        /// <param name="descriptor"></param>
+        /// <param name="stoppingToken"></param>
+        /// <returns></returns>
+        private async ValueTask<ContentQueryResult> ExecuteQuery(IEnumerable<PatchEndpoint> hosts, ResourceDescriptor descriptor, CancellationToken stoppingToken)
+        {
+            var transferContext = new TransferContext()
+            {
+                Client = _clientFactory.CreateClient(),
+                Range = descriptor.Offset != 0
+                    ? new RangeHeaderValue(descriptor.Offset, descriptor.Offset + descriptor.Length)
+                    : default,
+                Endpoints = hosts.GetEnumerator(),
+            };
+
+            var resilienceContext = ResilienceContextPool.Shared.Get(stoppingToken);
+            var result = await _acquisitionPipeline.ExecuteOutcomeAsync(async (context, state) =>
+            {
+                if (!state.Endpoints.MoveNext())
+                    return Outcome.FromResult(new ContentQueryResult(HttpStatusCode.NotFound, Stream.Null));
+
+                var server = state.Endpoints.Current;
+                HttpRequestMessage requestMessage = new(HttpMethod.Get, $"http://{server.Host}/{server.DataStem}/{descriptor.RemotePath}")
+                {
+                    Headers = { Range = state.Range },
+                };
+
+                var response = await state.Client.SendAsync(requestMessage, HttpCompletionOption.ResponseHeadersRead, stoppingToken);
+                response.EnsureSuccessStatusCode();
+
+                var dataStream = await response.Content.ReadAsStreamAsync();
+                var transferInformation = new ContentQueryResult(response.StatusCode, dataStream);
+
+                return Outcome.FromResult(transferInformation);
+            }, resilienceContext, transferContext);
+
+            return result.Result;
         }
     }
 }

@@ -5,10 +5,12 @@ using Blizztrack.Framework.TACT;
 using Blizztrack.Framework.TACT.Resources;
 using Blizztrack.Options;
 using Blizztrack.Persistence;
+using Blizztrack.Persistence.Translators;
 using Blizztrack.Services;
 using Blizztrack.Services.Hosted;
 
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 
@@ -23,10 +25,9 @@ namespace Blizztrack
             builder.Services
                 .AddDbContextPool<DatabaseContext>(opt =>
                 {
-                    var backendSection = builder.Configuration.GetSection("Backend").Get<DatabaseConnectionOptions>();
-                    if (backendSection is null)
-                        throw new InvalidProgramException();
-
+                    var backendSection = builder.Configuration.GetSection("Backend").Get<DatabaseConnectionOptions>()
+                        ?? throw new InvalidProgramException();
+                    opt.ReplaceService<IMethodCallTranslatorProvider, CustomTranslators>();
                     opt.UseNpgsql(backendSection.ToString());
                 })
                 .AddHttpClient()
@@ -35,6 +36,7 @@ namespace Blizztrack
                 .AddSingleton<IOptionsMonitor<Settings>, OptionsMonitor<Settings>>()
                 .AddSingleton<MediatorService>()
                 .AddHostedService<SummaryMonitorService>()
+                .AddHostedService<KnownFilesMonitorService>()
                 .AddSingleton<ContentService>()
                 .AddSingleton<LocalCacheService>()
                 .AddSingleton<IResourceLocator, ResourceLocatorService>()

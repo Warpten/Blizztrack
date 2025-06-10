@@ -282,5 +282,9 @@ namespace Blizztrack.Framework.TACT
 
             return (T.FromString(bytes[tokens[0]]), U.FromString(bytes[tokens[1]]));
         }
+
+        public static T AsKey<T>(this string @string)
+            where T : IOwnedKey<T>
+            => T.FromString(@string);
     }
 }
