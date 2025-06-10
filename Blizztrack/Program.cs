@@ -182,28 +182,24 @@ namespace Blizztrack
                 host.UseSwaggerUi();
             }
 
-            host.UseHttpsRedirection()
-                .UseRouting()
-                .UseEndpoints(endpoints => endpoints.MapControllers());
-
             // Add a telemetry middleware if telemetry is active
             if (telemetryEndpoint is not null)
             {
                 host.Use(async (context, next) => {
                     var currentActivity = Activity.Current;
-                    if (currentActivity is not null)
+
+                    if (currentActivity is null)
                     {
-                        prepareActivity(currentActivity);
+                        using var activity = ActivitySupplier.StartActivity($"{context.Request.Method} {context.Request.Path}");
 
                         await next(context);
+                        if (activity is not null)
+                            prepareActivity(activity);
                     }
                     else
                     {
-                        using var activity = ActivitySupplier.StartActivity($"{context.Request.Method} {context.Request.Path}");
-                        if (activity is not null)
-                            prepareActivity(activity);
-
                         await next(context);
+                        prepareActivity(currentActivity);
                     }
 
                     void prepareActivity(Activity activity)
@@ -219,12 +215,17 @@ namespace Blizztrack
                             foreach (var (parameter, value) in context.Request.Query)
                                 activity.SetTag($"blizztrack.parameters.query[{parameter}]", value);
 
-                            foreach (var (parameter, value) in context.Request.Form)
-                                activity.SetTag($"blizztrack.parameters.form[{parameter}]", value);
+                            if (context.Request.Method == "POST")
+                                foreach (var (parameter, value) in context.Request.Form)
+                                    activity.SetTag($"blizztrack.parameters.form[{parameter}]", value);
                         }
                     }
                 });
             }
+
+            host.UseHttpsRedirection()
+                .UseRouting()
+                .UseEndpoints(endpoints => endpoints.MapControllers());
 
             // host.AddApplicationCommandModule<FileCommandModule>().UseGatewayEventHandlers();
             await host.RunAsync();

@@ -23,7 +23,7 @@ namespace Blizztrack.Services
         public ValueTask<T> Obtain<C, E>(string productCode, C contentKey, E encodingKey, CancellationToken stoppingToken)
             where C : IContentKey<C>, IKey<C>
             where E : IEncodingKey<E>, IKey<E>
-            => _cache.GetOrSetAsync($"{fileIdentifier}:{encodingKey}",
+            => _cache.GetOrSetAsync($"{fileIdentifier}:{encodingKey.AsHexString()}",
                 async token => await OpenHandle(productCode, encodingKey, contentKey, token),
                 new FusionCacheEntryOptions() {
                     Duration = durationGetter(_settings.CurrentValue.Cache.Expirations),
@@ -31,7 +31,7 @@ namespace Blizztrack.Services
 
         public ValueTask<T> Obtain<E>(string productCode, E encodingKey, CancellationToken stoppingToken)
             where E : IEncodingKey<E>, IKey<E>
-            => _cache.GetOrSetAsync($"{fileIdentifier}:{encodingKey}",
+            => _cache.GetOrSetAsync($"{fileIdentifier}:{encodingKey.AsHexString()}",
                 async token => await OpenHandle(productCode, encodingKey, token),
                 new FusionCacheEntryOptions()
                 {
