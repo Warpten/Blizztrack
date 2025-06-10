@@ -182,47 +182,6 @@ namespace Blizztrack
                 host.UseSwaggerUi();
             }
 
-            // Add a telemetry middleware if telemetry is active
-            if (telemetryEndpoint is not null)
-            {
-                host.Use(async (context, next) => {
-                    var currentActivity = Activity.Current;
-
-                    if (currentActivity is null)
-                    {
-                        using var activity = ActivitySupplier.StartActivity($"{context.Request.Method} {context.Request.Path}");
-
-                        await next(context);
-                        if (activity is not null)
-                            prepareActivity(activity);
-                    }
-                    else
-                    {
-                        await next(context);
-                        prepareActivity(currentActivity);
-                    }
-
-                    void prepareActivity(Activity activity)
-                    {
-                        if (activity?.IsAllDataRequested ?? false)
-                        {
-                            // This probably needs some fine-tuning to only be applied to endpoints that would opt into telemetry.
-                            // Other considerations include toggling endpoint telemetry based on configuration files that get reloaded at runtime.
-
-                            foreach (var (parameter, value) in context.GetRouteData().Values)
-                                activity.SetTag($"blizztrack.parameters.route[{parameter}]", value);
-
-                            foreach (var (parameter, value) in context.Request.Query)
-                                activity.SetTag($"blizztrack.parameters.query[{parameter}]", value);
-
-                            if (context.Request.Method == "POST")
-                                foreach (var (parameter, value) in context.Request.Form)
-                                    activity.SetTag($"blizztrack.parameters.form[{parameter}]", value);
-                        }
-                    }
-                });
-            }
-
             host.UseHttpsRedirection()
                 .UseRouting()
                 .UseEndpoints(endpoints => endpoints.MapControllers());
