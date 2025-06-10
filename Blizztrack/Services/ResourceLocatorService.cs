@@ -5,13 +5,16 @@ using Blizztrack.Options;
 using Blizztrack.Persistence;
 
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 
 using Polly;
 using Polly.Retry;
-
+using Polly.Telemetry;
 using System.Net;
 using System.Net.Http.Headers;
+
+using static Blizztrack.Program;
 
 namespace Blizztrack.Services
 {
@@ -75,6 +78,13 @@ namespace Blizztrack.Services
             where C : IContentKey<C>, IKey, allows ref struct
             where T : class, IResourceParser<T>
         {
+            using var activity = ActivitySupplier.StartActivity("blizztrack.resources.open_compressed");
+            if (activity is not null && activity.IsAllDataRequested) {
+                activity.SetTag("blizztrack.blte.product", productCode);
+                activity.SetTag("blizztrack.blte.ckey", contentKey.AsHexString());
+                activity.SetTag("blizztrack.blte.ekey", encodingKey.AsHexString());
+            }
+
             var compressedDescriptor = new ResourceDescriptor(ResourceType.Data, productCode, encodingKey.AsHexString());
             var decompressedDescriptor = new ResourceDescriptor(ResourceType.Decompressed, productCode, contentKey.AsHexString());
             return OpenCompressedImpl<T>(compressedDescriptor, decompressedDescriptor, stoppingToken);
@@ -84,6 +94,14 @@ namespace Blizztrack.Services
             where E : IEncodingKey<E>, IKey, allows ref struct
             where C : IContentKey<C>, IKey, allows ref struct
         {
+            using var activity = ActivitySupplier.StartActivity("blizztrack.resources.open_compressed");
+            if (activity is not null && activity.IsAllDataRequested)
+            {
+                activity.SetTag("blizztrack.blte.product", productCode);
+                activity.SetTag("blizztrack.blte.ckey", contentKey.AsHexString());
+                activity.SetTag("blizztrack.blte.ekey", encodingKey.AsHexString());
+            }
+
             var compressedDescriptor = new ResourceDescriptor(ResourceType.Data, productCode, encodingKey.AsHexString());
             var decompressedDescriptor = new ResourceDescriptor(ResourceType.Decompressed, productCode, contentKey.AsHexString());
             return OpenCompressedHandleImpl(compressedDescriptor, decompressedDescriptor, stoppingToken);
@@ -189,6 +207,10 @@ namespace Blizztrack.Services
                     { Result.StatusCode: HttpStatusCode.NotFound } => PredicateResult.False(),
                     _ => PredicateResult.False()
                 }
+            })
+            .ConfigureTelemetry(new TelemetryOptions()
+            {
+                LoggerFactory = LoggerFactory.Create(options => options.AddOpenTelemetry())
             })
             .Build();
 

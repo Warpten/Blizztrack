@@ -1,5 +1,5 @@
 using Asp.Versioning;
-
+using Blizztrack.API;
 using Blizztrack.API.Converters;
 using Blizztrack.Framework.TACT;
 using Blizztrack.Framework.TACT.Resources;
@@ -13,14 +13,98 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
+using System.Diagnostics;
+using System.Reflection;
 
 namespace Blizztrack
 {
     public class Program
     {
+        public static readonly ActivitySource ActivitySupplier;
+
+        public static CancellableActivity StartCancellableActivity(string activityName, ActivityKind activityKind, CancellationToken stoppingToken)
+        {
+            var currentActivity = Activity.Current;
+            var newActivity = ActivitySupplier.CreateActivity(activityName, activityKind);
+            var cancellable = new CancellableActivity(currentActivity, newActivity, stoppingToken);
+
+            return cancellable;
+        }
+
+        public static Activity? StartTaggedActivity(string activityName, Func<IEnumerable<ValueTuple<string, object?>>> tags)
+        {
+            var activity = ActivitySupplier.StartActivity(activityName);
+            if (activity is not null)
+                foreach (var (k, v) in tags())
+                    activity.AddTag(k, v);
+
+            return activity;
+        }
+
+        public static CancellableActivity StartCancellableActivity(string activityName, CancellationToken stoppingToken)
+            => StartCancellableActivity(activityName, ActivityKind.Internal, stoppingToken);
+
+        public readonly ref struct CancellableActivity(Activity? previous, Activity? current, CancellationToken stoppingToken)
+        {
+            public readonly Activity? Activity = current;
+
+            private readonly Activity? _previous = previous;
+            private readonly CancellationTokenRegistration _registration = stoppingToken.Register(() => Cancel(current, previous));
+
+            private static void Cancel(Activity? current, Activity? previous)
+            {
+                if (current is not null)
+                {
+                    current.ActivityTraceFlags &= ~ActivityTraceFlags.Recorded;
+                    current.IsAllDataRequested = false;
+                }
+
+                Activity.Current = previous;
+            }
+
+            public readonly void Cancel() => Cancel(Activity, _previous);
+
+            public void Dispose()
+            {
+                // Unregister the cancellation
+                _registration.Dispose();
+
+                // And finish the activity.
+                Activity?.Dispose();
+            }
+        }
+
+        static Program()
+        {
+            var assembly = Assembly.GetExecutingAssembly().GetName();
+            ActivitySupplier = new ActivitySource(assembly.Name!, assembly.Version!.ToString());
+        }
+
         public static async Task Main(string[] args)
         {
             var builder = WebApplication.CreateBuilder(args);
+
+            var telemetryEndpoint = builder.Configuration["Telemetry"];
+            if (telemetryEndpoint is not null)
+            {
+                var openTelemetry = builder.Services.AddOpenTelemetry();
+                openTelemetry.ConfigureResource(resource => resource.AddService(serviceName: builder.Environment.ApplicationName))
+                    .WithMetrics(metrics => metrics.AddAspNetCoreInstrumentation()
+                        .AddFusionCacheInstrumentation()
+                        .AddMeter(nameof(Polly))
+                        .AddMeter("Microsoft.AspNetCore." + nameof(Microsoft.AspNetCore.Hosting))
+                        .AddMeter("Microsoft.AspNetCore.Server." + nameof(Microsoft.AspNetCore.Server.Kestrel))
+                        .AddMeter("System.Net." + nameof(System.Net.Http)))
+                    .WithTracing(tracing => tracing.AddHttpClientInstrumentation()
+                        .AddEntityFrameworkCoreInstrumentation()
+                        .AddFusionCacheInstrumentation()
+                        .AddAspNetCoreInstrumentation()
+                        .AddSource(ActivitySupplier.Name)
+                        .AddOtlpExporter(options => options.Endpoint = new(telemetryEndpoint)));
+            }
 
             builder.Services
                 .AddDbContextPool<DatabaseContext>(opt =>
@@ -100,6 +184,46 @@ namespace Blizztrack
             host.UseHttpsRedirection()
                 .UseRouting()
                 .UseEndpoints(endpoints => endpoints.MapControllers());
+
+            // Add a telemetry middleware if telemetry is active
+            if (telemetryEndpoint is not null)
+            {
+                host.Use(async (context, next) => {
+                    var currentActivity = Activity.Current;
+                    if (currentActivity is not null)
+                    {
+                        prepareActivity(currentActivity);
+
+                        await next(context);
+                    }
+                    else
+                    {
+                        using var activity = ActivitySupplier.StartActivity($"{context.Request.Method} {context.Request.Path}");
+                        if (activity is not null)
+                            prepareActivity(activity);
+
+                        await next(context);
+                    }
+
+                    void prepareActivity(Activity activity)
+                    {
+                        if (activity?.IsAllDataRequested ?? false)
+                        {
+                            // This probably needs some fine-tuning to only be applied to endpoints that would opt into telemetry.
+                            // Other considerations include toggling endpoint telemetry based on configuration files that get reloaded at runtime.
+
+                            foreach (var (parameter, value) in context.GetRouteData().Values)
+                                activity.SetTag($"blizztrack.parameters.route[{parameter}]", value);
+
+                            foreach (var (parameter, value) in context.Request.Query)
+                                activity.SetTag($"blizztrack.parameters.query[{parameter}]", value);
+
+                            foreach (var (parameter, value) in context.Request.Form)
+                                activity.SetTag($"blizztrack.parameters.form[{parameter}]", value);
+                        }
+                    }
+                });
+            }
 
             // host.AddApplicationCommandModule<FileCommandModule>().UseGatewayEventHandlers();
             await host.RunAsync();

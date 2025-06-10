@@ -5,10 +5,12 @@ using Blizztrack.Persistence.Entities;
 
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
-
+using System.Diagnostics;
 using System.Linq.Expressions;
 using System.Net;
 using System.Runtime.InteropServices;
+
+using static Blizztrack.Program;
 
 namespace Blizztrack.Services.Hosted
 {
@@ -37,6 +39,8 @@ namespace Blizztrack.Services.Hosted
             {
                 while (await periodicTimer.WaitForNextTickAsync(stoppingToken))
                 {
+                    using var _ = ActivitySupplier.StartActivity("blizztrack.ribbit.summary");
+
                     sequenceNumbers.AsSpan().Clear(); // Reset the staging buffer
 
                     // Open a new scope and acquire a new database context for this tick.
@@ -94,6 +98,11 @@ namespace Blizztrack.Services.Hosted
                         // If that's the case, try to update.
                         if (!entityExists || sequenceNumbers[(int) SequenceNumberType.CDN] != cacheEntry!.CDN)
                         {
+                            using var __ = StartTaggedActivity("blizztrack.ribbit.cdns", () => [
+                                ("blizztrack.ribbit.product", productUpdate.Key),
+                                ("blizztrack.ribbit.sequence", cacheEntry.CDN)
+                            ]);
+
                             var cdns = await Commands.GetProductCDNs(productUpdate.Key, queryEndpoint.Host, queryEndpoint.Port, stoppingToken);
                             if (cdns.SequenceNumber == sequenceNumbers[(int) SequenceNumberType.CDN])
                             {
@@ -120,10 +129,14 @@ namespace Blizztrack.Services.Hosted
 
                         if (!entityExists || sequenceNumbers[(int) SequenceNumberType.Version] != cacheEntry!.Version)
                         {
+                            using var __ = StartTaggedActivity("blizztrack.ribbit.version", () => [
+                                ("blizztrack.ribbit.product", productUpdate.Key),
+                                ("blizztrack.ribbit.sequence", cacheEntry.Version)
+                            ]);
+
                             var versions = await Commands.GetProductVersions(productUpdate.Key, queryEndpoint.Host, queryEndpoint.Port, stoppingToken);
                             if (versions.SequenceNumber == sequenceNumbers[(int) SequenceNumberType.Version])
                             {
-
                                 cacheEntry!.Version = versions.SequenceNumber;
 
                                 await _mediatorService.Products.OnVersions.Writer.WriteAsync((productUpdate.Key, versions), stoppingToken);
@@ -160,6 +173,11 @@ namespace Blizztrack.Services.Hosted
 
                         if (!entityExists || sequenceNumbers[(int) SequenceNumberType.BGDL] != cacheEntry!.BGDL)
                         {
+                            using var __ = StartTaggedActivity("blizztrack.ribbit.bgdl", () => [
+                                ("blizztrack.ribbit.product", productUpdate.Key),
+                                ("blizztrack.ribbit.sequence", cacheEntry.Version)
+                            ]);
+
                             var bgdl = await Commands.GetProductBGDL(productUpdate.Key, queryEndpoint.Host, queryEndpoint.Port, stoppingToken);
                             if (bgdl.SequenceNumber == sequenceNumbers[(int) SequenceNumberType.BGDL])
                             {

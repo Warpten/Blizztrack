@@ -12,6 +12,7 @@ using Microsoft.AspNetCore.Mvc;
 using NSwag.Annotations;
 
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 using static Blizztrack.API.EncodingController.EncodingEntry;

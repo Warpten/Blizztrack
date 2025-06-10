@@ -1,4 +1,6 @@
-﻿namespace Blizztrack.Framework.TACT.Resources
+﻿using System.Diagnostics.CodeAnalysis;
+
+namespace Blizztrack.Framework.TACT.Resources
 {
     /// <summary>
     /// A resource type.
@@ -47,5 +49,8 @@
 
         public static bool operator ==(ResourceType lhs, ResourceType rhs) => lhs._index == rhs._index;
         public static bool operator !=(ResourceType lhs, ResourceType rhs) => lhs._index != rhs._index;
+
+        public override bool Equals([NotNullWhen(true)] object? obj) => obj is ResourceType other && other._index == _index;
+        public override int GetHashCode() => _index;
     }
 }
