@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
+using System.Text;
 
 #pragma warning disable BT003 // Type or member is obsolete
 
@@ -281,6 +282,261 @@ namespace Blizztrack.Framework.TACT.Implementation
 
             internal readonly string DebuggerDisplay => $"{Compressed} -> {Decompressed}";
         }
+    }
+
+
+    public static partial class SpecificationExtensions
+    {
+        public static ISpecification ToSchema(this string specification)
+        {
+            (_, var schema) = ParseEncodingSpec(specification.AsSpan(), 0);
+            return schema;
+        }
+
+        private static (int, ISpecification) ParseEncodingSpec(ReadOnlySpan<char> source, int startOffset)
+        {
+            switch (source[startOffset])
+            {
+                case 'b':
+                    return ParseBlocks(source, startOffset + 1);
+                case 'n':
+                    return (startOffset + 1, new FlatChunk());
+                case 'z':
+                    return ParseCompressedBlock(source, startOffset + 1);
+            }
+
+            throw new InvalidOperationException("Non-supported espec");
+        }
+
+        private static (int, ISpecification) ParseBlocks(ReadOnlySpan<char> source, int startOffset)
+        {
+            if (source[startOffset] != ':')
+                throw new InvalidOperationException("Malformed espec");
+
+            if (source[startOffset + 1] == '{')
+            {
+                var chunks = new List<ISpecification>();
+                while (true)
+                {
+                    (startOffset, var chunk) = ParseBlockSubchunk(source, startOffset + 2);
+                    chunks.Add(chunk);
+
+                    if (source[startOffset] == '}')
+                        break;
+
+                    Debug.Assert(source[startOffset] == ',');
+                    ++startOffset;
+                }
+
+                ++startOffset;
+                return (startOffset + 1, new Chunks([.. chunks]));
+            }
+
+            return ParseBlockSubchunk(source, startOffset + 1);
+        }
+
+        private static (int, ISpecification) ParseCompressedBlock(ReadOnlySpan<char> source, int startOffset)
+        {
+            if (source[startOffset] != ':')
+                return (startOffset, new CompressedChunk(9, 15));
+
+            if (source[startOffset + 1] == '{')
+            {
+                var i = 0;
+                while (source[startOffset + i + 2] >= '0' && source[startOffset + i + 2] <= '9')
+                    ++i;
+
+                var level = int.Parse(source.Slice(startOffset + 2, i));
+                Debug.Assert(source[startOffset + i + 2] == ',');
+
+                var j = 0;
+                while (source[startOffset + i + 3 + j] != '}')
+                    ++j;
+
+                var bits = new Range(startOffset + i + 3, startOffset + i + 3 + j);
+                if (source[bits].SequenceEqual("mpq"))
+                    return (startOffset + i + 3 + j + 1, new CompressedChunk(level, -1));
+
+                if (source[bits].SequenceEqual("zlib") || source[bits].SequenceEqual("lz4hc"))
+                    throw new InvalidOperationException("Unknown compressed bits");
+
+                return (startOffset + i + 3 + j + 1, new CompressedChunk(level, int.Parse(source[bits])));
+            }
+            else
+            {
+                var i = 0;
+                while (source[startOffset + i] >= '0' && source[startOffset + i] <= '9')
+                    ++i;
+
+                var level = int.Parse(source.Slice(startOffset, i));
+                return (startOffset + i, new CompressedChunk(level, 15));
+            }
+        }
+
+        private static (int, ISpecification) ParseBlockSubchunk(ReadOnlySpan<char> source, int startOffset)
+        {
+            (startOffset, var blockSize, var blockSizeUnit, var repetitionCount) = parseBlockSizeSpec(source, startOffset);
+            if (source[startOffset] != '=')
+                throw new InvalidOperationException("Malformed espec block subchunk");
+
+            (startOffset, var blockSpec) = ParseEncodingSpec(source, startOffset + 1);
+            return (startOffset, new BlockSizedChunk(blockSpec, blockSize, blockSizeUnit, repetitionCount));
+
+            static (int, int, char, int) parseBlockSizeSpec(ReadOnlySpan<char> source, int startOffset)
+            {
+                var i = 0;
+                while (source[startOffset + i] >= '0' && source[startOffset + i] <= '9')
+                    ++i;
+
+                var size = int.Parse(source.Slice(startOffset, i));
+                if (source[startOffset + i] == 'K' || source[startOffset + i] == 'M')
+                {
+                    if (source[startOffset + i + 1] == '*')
+                    {
+                        var j = 0;
+                        while (source[startOffset + i + 2 + j] >= '0' && source[startOffset + i + 2 + j] <= '9')
+                            ++j;
+
+                        if (j == 0)
+                            return (startOffset + i + 2, size, source[startOffset + i], -1);
+
+                        return (startOffset + i + 2 + j, size, source[startOffset + i], int.Parse(source.Slice(startOffset + i + 2, j)));
+                    }
+
+                    return (startOffset + i + 1, size, source[startOffset + i], 1);
+                }
+
+                if (source[startOffset + i] == '*')
+                {
+                    var j = 0;
+                    while (source[startOffset + i + 1 + j] >= '0' && source[startOffset + i + 1 + j] <= '9')
+                        ++j;
+
+                    if (j == 0)
+                        return (startOffset + i + 1, size, source[startOffset + i], -1);
+
+                    return (startOffset + i + 1 + j, size, 'b', int.Parse(source.Slice(startOffset + i + 1, j)));
+                }
+
+                return (startOffset + i, size, 'b', 1);
+            }
+        }
+    }
+
+    unsafe ref struct SpecificationVisitor(int fileSize) : ISpecificationVisitor
+    {
+        private readonly int _fileSize = fileSize;
+        private int _cursor = 0;
+
+        // Internal scrap variable used to keep track of the source chunk size.
+        // Initialize to the whole file so that top-level chunks are nicely dealt with.
+        private Range _currentRange = new (0, fileSize);
+
+        private List<(Range, nint Fn, nint Opaque)> _parsers = [];
+
+        private void ProcessChunkSpecification(Range dataRange, ISpecification chunkSpecification)
+        {
+            _currentRange = dataRange;
+            chunkSpecification.Accept(this);
+        }
+
+        public void VisitBlockSizedChunk(int length, int repetitions, ISpecification chunk)
+        {
+            for (var i = repetitions; i != 0 && _cursor < _fileSize; _cursor += length, --repetitions)
+                ProcessChunkSpecification(new Range(_cursor, _cursor + length), chunk);
+
+            // TODO: There may be a bug in disguise here if the trailing chunk in a greedy chunk is actually
+            //       propagating the bit window size of the regular-sized chunks.
+            if (repetitions == -1)
+                ProcessChunkSpecification(new Range(_cursor, _fileSize), chunk);
+        }
+
+        public void VisitCompressedChunk(int level, int bits)
+        {
+            if (bits != -1)
+            {
+                // Materializes the pointer
+                int pfn = (int) (delegate*<ReadOnlySpan<byte>, Span<byte>, nint, void>) &ExecuteCompress;
+
+                // Bits go from 9 to 15, which means that they can be encoded by mapping from 0 to 6.
+                // (9 -> 0)..(15 -> 6). Thus, to encode a value up to six, we need 3 bits.
+                // On top of that, we have compression levels that go from 0 to 9 - and therefore fit
+                // 5 bits.
+                // Coincidentally, this means we can code the level and the bits on a single byte -
+                // But we choose to use an opaque storage that is as wide as one register.
+                _parsers.Add((_currentRange, pfn , (level << 3) | (bits - 9)));
+
+                return;
+            }
+
+            VisitCompressedChunk(level, (_currentRange.End.Value - _currentRange.Start.Value) switch {
+                <= 0x200 => 9,
+                <= 0x400 => 10,
+                <= 0x800 => 11,
+                <= 0x1000 => 12,
+                <= 0x2000 => 13,
+                <= 0x4000 => 14,
+                _ => 15
+            });
+        }
+
+        public void VisitFlatChunk()
+        {
+            // Materializes the pointer
+            int pfn = (int)(delegate*<ReadOnlySpan<byte>, Span<byte>, nint, void>) &ExecuteFlat;
+            _parsers.Add((_currentRange, pfn, 0));
+        }
+
+        private static void ExecuteFlat(ReadOnlySpan<byte> source, Span<byte> dest, nint _)
+            => source.CopyTo(dest);
+
+        private static void ExecuteCompress(ReadOnlySpan<byte> source, Span<byte> dest, nint opaque)
+        {
+            var windowBits = (int)(opaque & 0b111);
+            var compressionLevel = (int)((opaque >> 3) & 0b11111);
+
+            Compression.Instance.Compress(source, dest, compressionLevel, windowBits);
+        }
+    }
+
+    public interface ISpecification
+    {
+        public void Accept<T>(T visitor) where T : ISpecificationVisitor, allows ref struct;
+    }
+
+    public interface ISpecificationVisitor
+    {
+        public void VisitCompressedChunk(int level, int bits);
+        public void VisitFlatChunk();
+        public void VisitBlockSizedChunk(int length, int repetitions, ISpecification chunk);
+    }
+
+    record class CompressedChunk(int Level, int Bits) : ISpecification
+    {
+        public void Accept<T>(T visitor) where T : ISpecificationVisitor, allows ref struct => visitor.VisitCompressedChunk(Level, Bits);
+    }
+    record class FlatChunk() : ISpecification
+    {
+        public void Accept<T>(T visitor) where T : ISpecificationVisitor, allows ref struct => visitor.VisitFlatChunk();
+    }
+    record class Chunks(ISpecification[] Items) : ISpecification
+    {
+        public void Accept<T>(T visitor) where T : ISpecificationVisitor, allows ref struct
+        {
+            foreach (var chunk in Items)
+                chunk.Accept(visitor);
+        }
+    }
+    record class BlockSizedChunk(ISpecification Spec, int Size, char Unit, int Repetitions) : ISpecification
+    {
+        public void Accept<T>(T visitor) where T : ISpecificationVisitor, allows ref struct
+            => visitor.VisitBlockSizedChunk(Unit switch
+            {
+                'K' => Size * 1024,
+                'M' => Size * 1024 * 1024,
+                'b' => Size,
+                _ => throw new ArgumentOutOfRangeException(nameof(Unit))
+            }, Repetitions, Spec);
     }
 }
 
