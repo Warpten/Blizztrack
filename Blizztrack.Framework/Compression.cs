@@ -25,6 +25,15 @@ namespace Blizztrack.Framework
         [LibraryImport(Constants.LibraryName, EntryPoint = "CompressionNative_InflateEnd")]
         private static partial int InflateEnd(ref Stream stream);
 
+        [LibraryImport(Constants.LibraryName, EntryPoint = "CompressionNative_DeflateInit2_")]
+        private static partial int InitializeDeflate(ref Stream stream, int flags);
+        
+        [LibraryImport(Constants.LibraryName, EntryPoint = "CompressionNative_Deflate")]
+        private static partial int Deflate(ref Stream stream, int flushCode);
+
+        [LibraryImport(Constants.LibraryName, EntryPoint = "CompressionNative_DeflateEnd")]
+        private static partial int DeflateEnd(ref Stream stream);
+
         public static readonly Compression Instance = new Compression();
 #else
         static Compression()
@@ -52,17 +61,51 @@ namespace Blizztrack.Framework
         private readonly delegate*<ref Stream, int, int> Inflate;
         private readonly delegate*<ref Stream, int> InflateEnd;
 
+        private readonly delegate*<ref Stream, int, int, int, int, int, int> InitializeDeflate;
+        private readonly delegate*<ref Stream, int, int> Deflate;
+        private readonly delegate*<ref Stream, int> DeflateEnd;
+
         Compression(Func<string, nint> loader)
         {
             InitializeInflate = (delegate*<ref Stream, int, int>)loader("CompressionNative_InflateInit2_").ToPointer();
             Inflate = (delegate*<ref Stream, int, int>)loader("CompressionNative_Inflate").ToPointer();
             InflateEnd = (delegate*<ref Stream, int>)loader("CompressionNative_InflateEnd").ToPointer();
+
+            InitializeDeflate = (delegate*<ref Stream, int, int, int, int, int, int>)loader("CompressionNative_DeflateInit2_").ToPointer();
+            Deflate = (delegate*<ref Stream, int, int>)loader("CompressionNative_Deflate").ToPointer();
+            DeflateEnd = (delegate*<ref Stream, int>)loader("CompressionNative_DeflateEnd").ToPointer();
         }
 
         public static Compression Instance { get; }
 #endif
 
-        public bool Execute(ReadOnlySpan<byte> input, Span<byte> output)
+        public bool Compress(ReadOnlySpan<byte> input, Span<byte> output, int level, int method, int windowBits, int memLevel, int strategy)
+        {
+            const int Z_OK = 0;
+            const int Z_NO_FLUSH = 0;
+            const int Z_STREAM_END = 1;
+
+            Stream stream = new(input, output);
+            var returnCode = InitializeDeflate(ref stream, level, method, windowBits, memLevel, strategy);
+
+            if (returnCode != Z_OK)
+                return false;
+
+            while (stream.AvailableIn != 0 && returnCode != Z_STREAM_END)
+            {
+                returnCode = Deflate(ref stream, Z_NO_FLUSH);
+                if (returnCode < 0)
+                {
+                    returnCode = DeflateEnd(ref stream);
+                    return false;
+                }
+            }
+
+            returnCode = DeflateEnd(ref stream);
+            return returnCode == Z_OK;
+        }
+
+        public bool Decompress(ReadOnlySpan<byte> input, Span<byte> output)
         {
             const int Z_OK = 0;
             const int Z_NO_FLUSH = 0;

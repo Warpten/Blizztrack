@@ -2,6 +2,7 @@
 using Blizztrack.Framework.TACT.Resources;
 
 using static Blizztrack.Framework.TACT.Implementation.IIndex;
+using Blizztrack.Framework.IO;
 
 namespace Blizztrack.Framework.TACT.Implementation
 {

@@ -1,9 +1,6 @@
-﻿using System.Runtime.InteropServices;
-
-using Blizztrack.Shared.Extensions;
+﻿using Blizztrack.Shared.Extensions;
 using Blizztrack.Framework.TACT.Resources;
 using Blizztrack.Framework.IO;
-using System.Collections;
 using System.Runtime.CompilerServices;
 
 namespace Blizztrack.Framework.TACT.Implementation
@@ -24,14 +21,14 @@ namespace Blizztrack.Framework.TACT.Implementation
         /// The version of this manifest file.
         /// </summary>
         public readonly int Version;
+
+        #region IResourceParser
         public static Install OpenResource(ResourceHandle decompressedHandle)
-            => Open(new MemoryMappedDataSupplier(decompressedHandle));
+            => Open(decompressedHandle.ToMemoryMappedData());
 
         public static Install OpenCompressedResource(ResourceHandle compressedHandle)
-        {
-            var decompressedBytes = BLTE.Parse(compressedHandle);
-            return Open(new InMemoryDataSupplier(decompressedBytes));
-        }
+            => Open(BLTE.Parse(compressedHandle).ToDataSupplier());
+        #endregion
 
         public static Install Open<T>(T fileData) where T : IBinaryDataSupplier
         {

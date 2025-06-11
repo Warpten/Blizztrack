@@ -1,11 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Runtime.InteropServices;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace Blizztrack.Framework.IO
+﻿namespace Blizztrack.Framework.IO
 {
     /// <summary>
     /// This interface is used to access binary data to be interpreted by various TACT file format implementations.

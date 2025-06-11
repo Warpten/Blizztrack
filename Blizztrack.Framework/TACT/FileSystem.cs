@@ -6,7 +6,6 @@ using Blizztrack.Shared.Extensions;
 
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
-using System.Net.Http.Headers;
 
 using Encoding = Blizztrack.Framework.TACT.Implementation.Encoding;
 
@@ -138,7 +137,7 @@ namespace Blizztrack.Framework.TACT
 
             // 3. Load encoding (must exist)
             var encodingHandle = await Open(buildConfiguration.Encoding.EncodingKey, product, locator, stoppingToken);
-            var encodingInstance = Encoding.Open(new MemoryMappedDataSupplier(encodingHandle));
+            var encodingInstance = Encoding.Open(new MappedMemoryData(encodingHandle));
 
             // 4. Load root (if it exists)
             var rootHandle = Open(buildConfiguration.Root, product, locator, encodingInstance, stoppingToken);
@@ -149,8 +148,8 @@ namespace Blizztrack.Framework.TACT
             // Execute tasks in parallel and wait for everything.
             await Task.WhenAll(rootHandle, installHandle, indicesTask, fileIndex);
 
-            var rootInstance = rootHandle.Result != default ? new Root(rootHandle.Result) : null;
-            var installInstance = installHandle.Result != default ? Install.Open(new MemoryMappedDataSupplier(installHandle.Result)) : null;
+            var rootInstance = rootHandle.Result != default ? Root.OpenResource(rootHandle.Result) : null;
+            var installInstance = installHandle.Result != default ? Install.Open(new MappedMemoryData(installHandle.Result)) : null;
 
             return new FileSystem(product, serverConfiguration.Archives, encodingInstance, rootInstance, installInstance);
         }

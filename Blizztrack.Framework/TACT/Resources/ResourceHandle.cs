@@ -1,6 +1,5 @@
-﻿using Blizztrack.Framework.TACT.Implementation;
-
-using Microsoft.Win32.SafeHandles;
+﻿using Blizztrack.Framework.IO;
+using Blizztrack.Framework.TACT.Implementation;
 
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
@@ -11,7 +10,6 @@ namespace Blizztrack.Framework.TACT.Resources
 {
     public readonly struct ResourceHandle(string filePath, long offset = 0, int length = 0)
     {
-        private readonly string _originalPath = filePath;
         private readonly FileInfo? _fileInfo = new (filePath);
         public readonly string Path => _fileInfo?.FullName ?? string.Empty;
         public readonly int Length => length == 0 && Exists ? (int) _fileInfo!.Length : length;
@@ -41,12 +39,35 @@ namespace Blizztrack.Framework.TACT.Resources
             accessor.Read(0, out value);
         }
 
-        public void Create(byte[] resourceData) => File.WriteAllBytes(_originalPath, resourceData);
+        public void Create(byte[] resourceData)
+        {
+            if (_fileInfo is not null)
+                File.WriteAllBytes(_fileInfo.FullName, resourceData);
+        }
 
+        /// <summary>
+        /// Maps this resource to memory.
+        /// </summary>
+        /// <returns></returns>
+        /// <remarks>
+        /// Contrary to <see cref="ToMemoryMappedData()"/>, this function returns a stack-allocated value. The type
+        /// this function returns also has <see cref="IDisposable"/> semantics, so make sure to correctly
+        /// <see cref="IDisposable.Dispose()"/> of it.
+        /// </remarks>
+        [Obsolete("This method is not necessarily obsolete, but chances are you want to use ToMemoryMappedData() instead.", DiagnosticId = "BT003")]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public MappedMemory AsMappedMemory() => new(AsMappedFile(), Offset, Length);
 
-        internal SafeFileHandle AsFileHandle(FileOptions options) => File.OpenHandle(Path, FileMode.Open, FileAccess.Read, FileShare.Read, options);
+        /// <summary>
+        /// Maps this resource to memory.
+        /// </summary>
+        /// <returns>An implementation of <see cref="IBinaryDataSupplier"/>.</returns>
+        /// <remarks>This function should only be used with implementations of <see cref="IResourceParser{T}"/>.</remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public MappedMemoryData ToMemoryMappedData() => new(this);
 
+        // IMPLEMENTATION DETAIL.
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal MemoryMappedFile AsMappedFile()
             => MemoryMappedFile.CreateFromFile(Path, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
 

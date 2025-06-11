@@ -5,7 +5,7 @@ using System.Runtime.CompilerServices;
 
 namespace Blizztrack.Framework.IO
 {
-    public readonly struct MemoryMappedDataSupplier : IBinaryDataSupplier
+    public readonly struct MappedMemoryData : IBinaryDataSupplier
     {
         private readonly MemoryMappedViewAccessor _accessor;
         private readonly unsafe byte* _rawData;
@@ -14,17 +14,17 @@ namespace Blizztrack.Framework.IO
 
         public readonly int Length => _length;
 
-        public unsafe MemoryMappedDataSupplier(ResourceHandle resourceHandle)
+        internal unsafe MappedMemoryData(ResourceHandle resourceHandle)
         {
             var memoryMappedFile = resourceHandle.AsMappedFile();
             _accessor = memoryMappedFile.CreateViewAccessor(resourceHandle.Offset, resourceHandle.Length, MemoryMappedFileAccess.Read);
             _offset = (nint) resourceHandle.Offset;
             _length = resourceHandle.Length;
 
-            _rawData = OperatingSystem.IsWindows()
-                ? (byte*)_accessor.SafeMemoryMappedViewHandle.DangerousGetHandle().ToPointer()
-                : null;
-            _accessor.SafeMemoryMappedViewHandle.AcquirePointer(ref _rawData);
+            if (OperatingSystem.IsWindows())
+                _rawData = (byte*)_accessor.SafeMemoryMappedViewHandle.DangerousGetHandle().ToPointer();
+            else
+                _accessor.SafeMemoryMappedViewHandle.AcquirePointer(ref _rawData);
 
             if (_rawData == null)
                 throw new InvalidOperationException("Failed to retrieve a pointer to file data");

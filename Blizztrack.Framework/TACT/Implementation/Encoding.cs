@@ -7,6 +7,7 @@ using static Blizztrack.Shared.Extensions.BinarySearchExtensions;
 using Blizztrack.Shared;
 using Blizztrack.Framework.IO;
 using Blizztrack.Framework.TACT.Resources;
+using System.Text;
 
 namespace Blizztrack.Framework.TACT.Implementation
 {
@@ -19,14 +20,13 @@ namespace Blizztrack.Framework.TACT.Implementation
         private readonly EncodingSchema _header;
         private readonly Lazy<string[]> _encodingSpecs;
 
+        #region IResourceParser
         public static Encoding OpenResource(ResourceHandle decompressedHandle)
-            => Open(new MemoryMappedDataSupplier(decompressedHandle));
+            => Open(decompressedHandle.ToMemoryMappedData());
 
         public static Encoding OpenCompressedResource(ResourceHandle compressedHandle)
-        {
-            var decompressedBytes = BLTE.Parse(compressedHandle);
-            return Open(new InMemoryDataSupplier(decompressedBytes));
-        }
+            => Open(BLTE.Parse(compressedHandle).ToDataSupplier());
+        #endregion
 
         public static Encoding Open<T>(T dataSource) where T : IBinaryDataSupplier
         {
@@ -427,6 +427,170 @@ namespace Blizztrack.Framework.TACT.Implementation
                     (var current, _) = _parser(pageRemainder, _ekeySize, _ckeySize);
                     return current;
                 }
+            }
+        }
+    }
+
+    public static partial class EncodingExtensions
+    {
+        public static IChunk ToSchema(this string specification)
+        {
+            (_, var schema) = ParseEncodingSpec(specification.AsSpan(), 0);
+            return schema;
+        }
+
+        private static (int, IChunk) ParseEncodingSpec(ReadOnlySpan<char> source, int startOffset)
+        {
+            switch (source[startOffset])
+            {
+                case 'b':
+                    return ParseBlocks(source, startOffset + 1);
+                case 'n':
+                    return (startOffset + 1, new FlatChunk());
+                case 'z':
+                    return ParseCompressedBlock(source, startOffset + 1);
+            }
+
+            throw new InvalidOperationException("Non-supported espec");
+        }
+
+        private static (int, IChunk) ParseBlocks(ReadOnlySpan<char> source, int startOffset)
+        {
+            if (source[startOffset] != ':')
+                throw new InvalidOperationException("Malformed espec");
+
+            if (source[startOffset + 1] == '{')
+            {
+                var chunks = new List<IChunk>();
+                while (true)
+                {
+                    (startOffset, var chunk) = ParseBlockSubchunk(source, startOffset + 2);
+                    chunks.Add(chunk);
+
+                    if (source[startOffset] == '}')
+                        break;
+
+                    Debug.Assert(source[startOffset] == ',');
+                    ++startOffset;
+                }
+                
+                ++startOffset;
+                return (startOffset + 1, new Chunks([.. chunks]));
+            }
+            
+            return ParseBlockSubchunk(source, startOffset + 1);
+        }
+
+        private static (int, IChunk) ParseCompressedBlock(ReadOnlySpan<char> source, int startOffset)
+        {
+            if (source[startOffset] != ':')
+                return (startOffset, new CompressedChunk(9, 15));
+
+            if (source[startOffset + 1] == '{')
+            {
+                var i = 0;
+                while (source[startOffset + i + 2] >= '0' && source[startOffset + i + 2] <= '9')
+                    ++i;
+
+                var level = int.Parse(source.Slice(startOffset + 2, i));
+                Debug.Assert(source[startOffset + i + 2] == ',');
+
+                var j = 0;
+                while (source[startOffset + i + 3 + j] != '}')
+                    ++j;
+
+                var bits = new Range(startOffset + i + 3, startOffset + i + 3 + j);
+                if (source[bits].SequenceEqual("mpq"))
+                    return (startOffset + i + 3 + j + 1, new CompressedChunk(level, -1));
+
+                if (source[bits].SequenceEqual("zlib") || source[bits].SequenceEqual("lz4hc"))
+                    throw new InvalidOperationException("Unknown compressed bits");
+
+                return (startOffset + i + 3 + j + 1, new CompressedChunk(level, int.Parse(source[bits])));
+            }
+            else
+            {
+                var i = 0;
+                while (source[startOffset + i] >= '0' && source[startOffset + i] <= '9')
+                    ++i;
+
+                var level = int.Parse(source.Slice(startOffset, i));
+                return (startOffset + i, new CompressedChunk(level, 15));
+            }
+        }
+
+        private static (int, IChunk) ParseBlockSubchunk(ReadOnlySpan<char> source, int startOffset)
+        {
+            (startOffset, var blockSize, var blockSizeUnit, var repetitionCount) = parseBlockSizeSpec(source, startOffset);
+            if (source[startOffset] != '=')
+                throw new InvalidOperationException("Malformed espec block subchunk");
+
+            (startOffset, var blockSpec) = ParseEncodingSpec(source, startOffset + 1);
+            return (startOffset, new BlockSizedChunk(blockSpec, blockSize, blockSizeUnit, repetitionCount));
+
+            static (int, int, char, int) parseBlockSizeSpec(ReadOnlySpan<char> source, int startOffset)
+            {
+                var i = 0;
+                while (source[startOffset + i] >= '0' && source[startOffset + i] <= '9')
+                    ++i;
+
+                var size = int.Parse(source.Slice(startOffset, i));
+                if (source[startOffset + i] == 'K' || source[startOffset + i] == 'M')
+                {
+                    if (source[startOffset + i + 1] == '*')
+                    {
+                        var j = 0;
+                        while (source[startOffset + i + 2 + j] >= '0' && source[startOffset + i + 2 + j] <= '9')
+                            ++j;
+
+                        if (j == 0)
+                            return (startOffset + i + 2, size, source[startOffset + i], -1);
+
+                        return (startOffset + i + 2 + j, size, source[startOffset + i], int.Parse(source.Slice(startOffset + i + 2, j)));
+                    }
+
+                    return (startOffset + i + 1, size, source[startOffset + i], 1);
+                }
+
+                if (source[startOffset + i] == '*')
+                {
+                    var j = 0;
+                    while (source[startOffset + i + 1 + j] >= '0' && source[startOffset + i + 1 + j] <= '9')
+                        ++j;
+
+                    if (j == 0)
+                        return (startOffset + i + 1, size, source[startOffset + i], -1);
+
+                    return (startOffset + i + 1 + j, size, 'b', int.Parse(source.Slice(startOffset + i + 1, j)));
+                }
+
+                return (startOffset + i, size, 'b', 1);
+            }
+        }
+
+        public interface IChunk;
+        private record class CompressedChunk(int Level, int Bits) : IChunk
+        {
+            public override string ToString() => $"z:{{{Level},{Bits}}}";
+        }
+        private record class FlatChunk() : IChunk
+        {
+            public override string ToString() => "n";
+        }
+        private record class Chunks(IChunk[] Items) : IChunk
+        {
+            public override string ToString() => "b:{" + string.Join(',', Items.AsEnumerable()) + "}";
+        }
+        private record BlockSizedChunk(IChunk Spec, int Size, char Unit, int Repetitions) : IChunk
+        {
+            public override string ToString()
+            {
+                var sb = new StringBuilder($"{Size}");
+                if (Unit != 'b') sb.Append(Unit);
+                if (Repetitions < 0) sb.Append('*');
+                else if (Repetitions > 1) sb.Append('*').Append(Repetitions);
+
+                return sb.Append('=').Append(Spec).ToString();
             }
         }
     }

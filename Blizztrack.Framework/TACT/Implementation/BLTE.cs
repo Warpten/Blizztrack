@@ -6,6 +6,8 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 
+#pragma warning disable BT003 // Type or member is obsolete
+
 namespace Blizztrack.Framework.TACT.Implementation
 {
     /// <summary>
@@ -190,7 +192,7 @@ namespace Blizztrack.Framework.TACT.Implementation
 
         private static void ParseImmediate(ReadOnlySpan<byte> input, Span<byte> output) => input.CopyTo(output);
 
-        private static void ParseCompressed(ReadOnlySpan<byte> input, Span<byte> output) => Compression.Instance.Execute(input, output);
+        private static void ParseCompressed(ReadOnlySpan<byte> input, Span<byte> output) => Compression.Instance.Decompress(input, output);
 
         private static unsafe (int, ChunkInfo[], EncodingKey) ParseHeader(ReadOnlySpan<byte> fileData, int compressedBase = 0, int decompressedBase = 0)
         {
@@ -266,16 +268,20 @@ namespace Blizztrack.Framework.TACT.Implementation
         }
 
         [DebuggerDisplay("{DebuggerDisplay,nq}")]
-        internal unsafe struct ChunkInfo(Range compressed, Range decompressed, delegate*<ReadOnlySpan<byte>, Span<byte>, void> parser)
+        internal unsafe struct ChunkInfo(Range compressed, Range decompressed,
+            delegate*<ReadOnlySpan<byte>, Span<byte>, void> parser)
         {
             public readonly Range Compressed = compressed;
             public readonly Range Decompressed = decompressed;
+
             public delegate*<ReadOnlySpan<byte>, Span<byte>, void> Parser = parser;
 
             public readonly long CompressedSize => Compressed.End.Value - Compressed.Start.Value;
             public readonly long DecompressedSize => Decompressed.End.Value - Decompressed.Start.Value;
 
-            internal string DebuggerDisplay => $"{Compressed} -> {Decompressed}";
+            internal readonly string DebuggerDisplay => $"{Compressed} -> {Decompressed}";
         }
     }
 }
+
+#pragma warning restore BT003 // Type or member is obsolete

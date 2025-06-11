@@ -11,6 +11,8 @@ using Microsoft.Extensions.Options;
 using Polly;
 using Polly.Retry;
 using Polly.Telemetry;
+
+using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Headers;
 
@@ -55,7 +57,7 @@ namespace Blizztrack.Services
         public async Task<ResourceHandle> OpenHandle(ResourceDescriptor resourceDescriptor, CancellationToken stoppingToken)
         {
             var localHandle = _localCache.OpenHandle(resourceDescriptor);
-            if (localHandle.Exists || resourceDescriptor.Type == ResourceType.Decompressed)
+            if (localHandle.Exists)
                 return localHandle;
 
             var endpoints = GetEndpoints(resourceDescriptor.Product);
@@ -142,7 +144,7 @@ namespace Blizztrack.Services
         // VALIDATED IMPLEMENTATION DETAIL
         private async Task<ResourceHandle> OpenCompressedHandleImpl(ResourceDescriptor compressedDescriptor, ResourceDescriptor decompressedDescriptor, CancellationToken stoppingToken)
         {
-            var decompressedHandle = await OpenHandle(decompressedDescriptor, stoppingToken);
+            var decompressedHandle = _localCache.OpenHandle(decompressedDescriptor);
             if (decompressedHandle != default)
                 return decompressedHandle;
 
@@ -182,7 +184,7 @@ namespace Blizztrack.Services
         private async Task<T> OpenCompressedImpl<T>(ResourceDescriptor compressedDescriptor, ResourceDescriptor decompressedDescriptor, CancellationToken stoppingToken)
             where T : class, IResourceParser<T>
         {
-            var decompressedHandle = await OpenHandle(decompressedDescriptor, stoppingToken);
+            var decompressedHandle = _localCache.OpenHandle(decompressedDescriptor);
             if (decompressedHandle != default)
                 return T.OpenResource(decompressedHandle);
 
@@ -244,6 +246,8 @@ namespace Blizztrack.Services
         /// <returns></returns>
         private async ValueTask<ContentQueryResult> ExecuteQuery(IEnumerable<PatchEndpoint> hosts, ResourceDescriptor descriptor, CancellationToken stoppingToken)
         {
+            Debug.Assert(descriptor.Type != ResourceType.Decompressed, "Decompressed descriptors can't be acquired from CDNs.");
+
             var transferContext = new TransferContext()
             {
                 Client = _clientFactory.CreateClient(),

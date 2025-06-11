@@ -1,7 +1,8 @@
-﻿using Blizztrack.Shared.Extensions;
+﻿using Blizztrack.Framework.IO;
 using Blizztrack.Framework.TACT.Enums;
 using Blizztrack.Framework.TACT.Resources;
 using Blizztrack.Framework.TACT.Structures;
+using Blizztrack.Shared.Extensions;
 
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -9,7 +10,9 @@ using System.Runtime.InteropServices;
 
 namespace Blizztrack.Framework.TACT.Implementation
 {
-    public class Root
+    #pragma warning disable BT003 // Type or member is obsolete
+
+    public class Root : IResourceParser<Root>
     {
         private readonly Page[] _pages;
 
@@ -27,12 +30,17 @@ namespace Blizztrack.Framework.TACT.Implementation
             | Locale.itIT
             | Locale.ptPT;
 
-        public Root(ResourceHandle resourceHandle)
-        {
-            using var memoryData = resourceHandle.AsMappedMemory();
-            ReadOnlySpan<byte> fileData = memoryData.Span;
+        #region IResourceParser
+        public static Root OpenResource(ResourceHandle decompressedHandle)
+            => Open(decompressedHandle.ToMemoryMappedData());
 
-            var magic = fileData.ReadUInt32BE();
+        public static Root OpenCompressedResource(ResourceHandle compressedHandle)
+            => Open(BLTE.Parse(compressedHandle).ToDataSupplier());
+        #endregion
+
+        public static Root Open<T>(T fileData) where T : IBinaryDataSupplier
+        {
+            var magic = fileData.Slice(0, 4).ReadUInt32BE();
             var (format, version, headerSize, totalFileCount, namedFileCount) = magic switch
             {
                 0x4D465354 => ParseMFST(fileData),
@@ -40,15 +48,15 @@ namespace Blizztrack.Framework.TACT.Implementation
             };
 
             // Skip the header.
-            fileData = fileData[headerSize..];
+            var parseCursor = fileData[headerSize..];
 
             var allowUnnamedFiles = format == Format.MFST && totalFileCount != namedFileCount;
 
             var pages = new List<Page>();
-            while (fileData.Length != 0)
+            while (parseCursor.Length != 0)
             {
-                var recordCount = fileData.Advance(4).ReadInt32LE();
-                var pageHeader = ParseManifestPageHeader(ref fileData, version);
+                var recordCount = parseCursor.Advance(4).ReadInt32LE();
+                var pageHeader = ParseManifestPageHeader(ref parseCursor, version);
 
                 // No records in this file.
                 if (recordCount == 0)
@@ -65,7 +73,7 @@ namespace Blizztrack.Framework.TACT.Implementation
                     blockSize += sizeof(long) * recordCount;
 
                 // Regardless of wether or not this page is parsed we need to advance the read cursor.
-                var blockData = fileData.Advance(blockSize);
+                var blockData = parseCursor.Advance(blockSize);
                 if (localeSkip || contentSkip)
                     continue;
 
@@ -91,8 +99,10 @@ namespace Blizztrack.Framework.TACT.Implementation
                 pages.Add(page);
             }
 
-            _pages = [.. pages];
+            return new([.. pages]);
         }
+
+        private Root(Page[] pages) => _pages = pages;
 
         public int Count => _pages.Sum(page => page.Records.Length);
 
@@ -225,10 +235,11 @@ namespace Blizztrack.Framework.TACT.Implementation
             return records;
         }
 
-        private static (Format, int Version, int HeaderSize, int TotalFileCount, int NamedFileCount) ParseMFST(ReadOnlySpan<byte> dataStream)
+        private static (Format, int Version, int HeaderSize, int TotalFileCount, int NamedFileCount) ParseMFST<T>(T dataStream)
+            where T : IBinaryDataSupplier
         {
             // Skip over magic at dataStream[0]
-            Debug.Assert(dataStream.ReadUInt32LE() == 0x4D465354);
+            Debug.Assert(dataStream[..4].ReadUInt32LE() == 0x4D465354);
 
             var headerSize = dataStream[4..].ReadInt32LE();
             var version = dataStream[8..].ReadInt32LE();
@@ -261,3 +272,5 @@ namespace Blizztrack.Framework.TACT.Implementation
         }
     }
 }
+
+#pragma warning restore BT003 // Type or member is obsolete

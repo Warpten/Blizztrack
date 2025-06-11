@@ -6,9 +6,11 @@ using System.Diagnostics.CodeAnalysis;
 using Blizztrack.Framework.TACT.Resources;
 using Blizztrack.Shared.Extensions;
 using Blizztrack.Shared;
+using Blizztrack.Framework.IO;
 
 namespace Blizztrack.Framework.TACT.Implementation
 {
+#pragma warning disable BT003 // Type or member is obsolete
     public abstract class AbstractIndex : IIndex
     {
         public readonly short ArchiveIndex;
@@ -160,3 +162,4 @@ namespace Blizztrack.Framework.TACT.Implementation
         }
     }
 }
+#pragma warning restore BT003 // Type or member is obsolete

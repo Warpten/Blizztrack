@@ -2,7 +2,7 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
-namespace Blizztrack.Framework
+namespace Blizztrack.Framework.IO
 {
     /// <summary>
     /// A lightweight handle around a file mapped in memory.
