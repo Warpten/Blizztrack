@@ -8,6 +8,8 @@ using Blizztrack.Shared;
 using Blizztrack.Framework.IO;
 using Blizztrack.Framework.TACT.Resources;
 using System.Text;
+using System.IO.Pipelines;
+using System.Buffers;
 
 namespace Blizztrack.Framework.TACT.Implementation
 {
