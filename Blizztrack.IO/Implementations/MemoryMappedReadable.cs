@@ -1,11 +1,12 @@
 ﻿using Blizztrack.IO.Extensions;
+
 using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
-namespace Blizztrack.IO
+namespace Blizztrack.IO.Implementations
 {
     public struct MemoryMappedReadable : IReadable, ISliceable<MemoryMappedReadable, MemoryMappedReadable.Temporary>
     {
@@ -39,12 +40,15 @@ namespace Blizztrack.IO
             _rawData = null;
         }
 
+        #region IReadable
         readonly unsafe U IReadable.ReadCore<U>(nint byteOffset, bool reverseEndianness)
             => Shared.ReadImpl<U>(_rawData, _length, byteOffset, reverseEndianness);
 
         readonly unsafe ReadOnlySpan<U> IReadable.ReadCore<U>(nint byteOffset, int count, bool reverseEndianness)
             => Shared.ReadImpl<U>(_rawData, _length, byteOffset, count, reverseEndianness);
+        #endregion
 
+        #region ISliceable
         public readonly unsafe Temporary this[Range range]
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -57,6 +61,7 @@ namespace Blizztrack.IO
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly unsafe Temporary Slice(int offset, int length) => new(_rawData, offset, length);
+        #endregion
 
         public readonly unsafe struct Temporary(byte* rawData, int offset, int length) : ISliceable<Temporary>, IReadable
         {

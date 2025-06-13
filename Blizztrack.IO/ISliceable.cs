@@ -11,9 +11,4 @@
     }
 
     public interface ISliceable<T> : ISliceable<T, T> where T : ISliceable<T, T>, allows ref struct;
-
-    public unsafe struct FileHandleReadable : IReadable
-    {
-
-    }
 }
