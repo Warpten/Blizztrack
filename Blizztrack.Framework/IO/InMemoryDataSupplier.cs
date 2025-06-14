@@ -2,31 +2,36 @@
 
 namespace Blizztrack.Framework.IO
 {
-    public readonly struct InMemoryDataSupplier(byte[] data) : IBinaryDataSupplier
+    public readonly struct InMemoryDataSupplier(byte[] data) : IBinaryDataSupplier<InMemoryDataSupplier>
     {
+        private readonly byte[] _data = data;
+
         public ReadOnlySpan<byte> this[Range range]
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => data[range];
+            get => _data[range];
         }
 
         public readonly byte this[int offset]
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => data[offset];
+            get => _data[offset];
         }
 
         public readonly byte this[Index index]
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => data[index];
+            get => _data[index];
         }
 
         public readonly int Length
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => data.Length;
+            get => _data.Length;
         }
+
+        public static implicit operator ReadOnlySpan<byte>(InMemoryDataSupplier value)
+            => value._data;
     }
 
     public static partial class BinaryDataSupplierExtensions

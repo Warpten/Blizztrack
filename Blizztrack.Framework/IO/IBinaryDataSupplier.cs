@@ -12,5 +12,10 @@
         public int Length { get; }
         public ReadOnlySpan<byte> Slice(int offset, int count) => this[offset..(offset + count)];
     }
+
+    public interface IBinaryDataSupplier<T> : IBinaryDataSupplier where T : IBinaryDataSupplier<T>, allows ref struct
+    {
+        public static abstract implicit operator ReadOnlySpan<byte>(T value);
+    }
 }
 
