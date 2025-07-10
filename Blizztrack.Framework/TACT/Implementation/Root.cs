@@ -1,8 +1,8 @@
-﻿using Blizztrack.Framework.IO;
-using Blizztrack.Framework.TACT.Enums;
+﻿using Blizztrack.Framework.TACT.Enums;
 using Blizztrack.Framework.TACT.Resources;
 using Blizztrack.Framework.TACT.Structures;
 using Blizztrack.Shared.Extensions;
+using Blizztrack.Shared.IO;
 
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -32,13 +32,13 @@ namespace Blizztrack.Framework.TACT.Implementation
 
         #region IResourceParser
         public static Root OpenResource(ResourceHandle decompressedHandle)
-            => Open(decompressedHandle.ToMemoryMappedData());
+            => Open(decompressedHandle.ToMappedDataSource());
 
         public static Root OpenCompressedResource(ResourceHandle compressedHandle)
-            => Open(BLTE.Parse(compressedHandle).ToDataSupplier());
+            => Open(BLTE.Parse(compressedHandle).ToDataSource());
         #endregion
 
-        public static Root Open<T>(T fileData) where T : IBinaryDataSupplier
+        public static Root Open<T>(T fileData) where T : IDataSource
         {
             var magic = fileData.Slice(0, 4).ReadUInt32BE();
             var (format, version, headerSize, totalFileCount, namedFileCount) = magic switch
@@ -236,7 +236,7 @@ namespace Blizztrack.Framework.TACT.Implementation
         }
 
         private static (Format, int Version, int HeaderSize, int TotalFileCount, int NamedFileCount) ParseMFST<T>(T dataStream)
-            where T : IBinaryDataSupplier
+            where T : IDataSource
         {
             // Skip over magic at dataStream[0]
             Debug.Assert(dataStream[..4].ReadUInt32LE() == 0x4D465354);

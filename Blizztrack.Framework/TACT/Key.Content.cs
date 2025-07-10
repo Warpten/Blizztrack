@@ -5,9 +5,9 @@ namespace Blizztrack.Framework.TACT
     /// <summary>
     /// Tag interface for content keys.
     /// </summary>
-    public interface IContentKey : IKey { }
+    public interface IContentKey { }
 
-    public interface IContentKey<T> where T : IContentKey<T>, allows ref struct
+    public interface IContentKey<T> : IKey<T>, IContentKey where T : IContentKey<T>, allows ref struct
     {
         public static abstract bool operator ==(T left, T right);
         public static abstract bool operator !=(T left, T right);
@@ -21,6 +21,9 @@ namespace Blizztrack.Framework.TACT
     public readonly ref struct ContentKeyRef(ReadOnlySpan<byte> data) : IKeyView<ContentKeyRef, ContentKey>, IContentKey<ContentKeyRef>
     {
         private readonly ReadOnlySpan<byte> _data = data;
+
+        public byte this[int offset] => _data[offset];
+        public int Length => _data.Length;
 
         public unsafe ReadOnlySpan<byte> AsSpan() => _data;
         public bool SequenceEqual<U>(U other) where U : notnull, IKey, allows ref struct => _data.SequenceEqual(other.AsSpan());
@@ -51,6 +54,8 @@ namespace Blizztrack.Framework.TACT
     public readonly struct ContentKey(byte[] data) : IOwnedKey<ContentKey>, IContentKey<ContentKey>
     {
         private readonly byte[] _data = data;
+        public byte this[int offset] => _data[offset];
+        public int Length => _data.Length;
 
         public static ContentKey Zero { get; } = new([]);
 

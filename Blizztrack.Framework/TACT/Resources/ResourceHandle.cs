@@ -1,5 +1,5 @@
-﻿using Blizztrack.Framework.IO;
-using Blizztrack.Framework.TACT.Implementation;
+﻿using Blizztrack.Framework.TACT.Implementation;
+using Blizztrack.Shared.IO;
 
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
@@ -15,6 +15,8 @@ namespace Blizztrack.Framework.TACT.Resources
         public readonly int Length => length == 0 && Exists ? (int) _fileInfo!.Length : length;
         public readonly long Offset = offset;
 
+        public readonly string Name => _fileInfo?.Name ?? string.Empty;
+
         public readonly bool Exists => (_fileInfo?.Exists ?? false) && _fileInfo?.Length != 0;
 
         /// <summary>
@@ -25,7 +27,7 @@ namespace Blizztrack.Framework.TACT.Resources
         /// <param name="offset"></param>
         /// <param name="value"></param>
         /// <remarks>Never expose this method to library users.</remarks>
-        internal void Read<T>(Index offset, out T value) where T : struct
+        internal void Read<T>(System.Index offset, out T value) where T : struct
         {
             var relativeOffset = offset.GetOffset(Length);
             var absoluteOffset = relativeOffset + Offset;
@@ -48,23 +50,10 @@ namespace Blizztrack.Framework.TACT.Resources
         /// <summary>
         /// Maps this resource to memory.
         /// </summary>
-        /// <returns></returns>
-        /// <remarks>
-        /// Contrary to <see cref="ToMemoryMappedData()"/>, this function returns a stack-allocated value. The type
-        /// this function returns also has <see cref="IDisposable"/> semantics, so make sure to correctly
-        /// <see cref="IDisposable.Dispose()"/> of it.
-        /// </remarks>
-        [Obsolete("This method is not necessarily obsolete, but chances are you want to use ToMemoryMappedData() instead.", DiagnosticId = "BT003")]
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public MappedMemory AsMappedMemory() => new(AsMappedFile(), Offset, Length);
-
-        /// <summary>
-        /// Maps this resource to memory.
-        /// </summary>
-        /// <returns>An implementation of <see cref="IBinaryDataSupplier"/>.</returns>
+        /// <returns>An implementation of <see cref="ISpanSource"/>.</returns>
         /// <remarks>This function should only be used with implementations of <see cref="IResourceParser{T}"/>.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public MappedMemoryData ToMemoryMappedData() => new(this);
+        public MappedDataSource ToMappedDataSource() => new(Path);
 
         // IMPLEMENTATION DETAIL.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -1,0 +1,3 @@
+﻿namespace Blizztrack.Services.Caching
+{
+}

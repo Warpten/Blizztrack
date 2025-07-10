@@ -71,7 +71,7 @@ namespace Blizztrack.Framework.TACT.Implementation
         /// <returns>A byte buffer containing the decompressed file.</returns>
         public unsafe byte[] Execute(ResourceHandle resourceHandle)
         {
-            using var inputData = resourceHandle.AsMappedMemory();
+            using var inputData = resourceHandle.ToMappedDataSource();
 
             var decompressedSize = _chunks[^1].Decompressed.End.Value;
             var dataBuffer = GC.AllocateUninitializedArray<byte>(decompressedSize);
@@ -79,7 +79,7 @@ namespace Blizztrack.Framework.TACT.Implementation
             for (var i = 0; i < _chunks.Length; ++i)
             {
                 ref var currentChunk = ref _chunks[i];
-                currentChunk.Parser(inputData.Span[currentChunk.Compressed], dataBuffer.AsSpan()[currentChunk.Decompressed]);
+                currentChunk.Parser(inputData[currentChunk.Compressed], dataBuffer.AsSpan()[currentChunk.Decompressed]);
             }
 
             return dataBuffer;
@@ -98,7 +98,7 @@ namespace Blizztrack.Framework.TACT.Implementation
         /// </remarks>
         /// <returns>A schema that can then be used to parse a file.</returns>
         public unsafe static BLTE ParseSchema<K>(ReadOnlySpan<byte> fileData, K? encodingKey, long decompressedSize = 0)
-            where K : notnull, IEncodingKey<K>, IKey, allows ref struct
+            where K : notnull, IEncodingKey<K>, allows ref struct
         {
             var (flags, chunks, expectedChecksum) = ParseHeader(fileData, 0, 0);
             EnsureSchemaValidity(chunks, decompressedSize);
@@ -149,9 +149,9 @@ namespace Blizztrack.Framework.TACT.Implementation
         /// <returns>A schema that can then be used to parse a file.</returns>
         public unsafe static BLTE ParseSchema(ResourceHandle resourceHandle, long decompressedSize = 0)
         {
-            using var memoryManager = resourceHandle.AsMappedMemory();
+            using var memoryManager = resourceHandle.ToMappedDataSource();
 
-            return ParseSchema(memoryManager.Span, decompressedSize);
+            return ParseSchema(memoryManager[..], decompressedSize);
         }
 
         /// <summary>
@@ -167,11 +167,11 @@ namespace Blizztrack.Framework.TACT.Implementation
         /// </remarks>
         /// <returns>A schema that can then be used to parse a file.</returns>
         public static BLTE ParseSchema<K>(ResourceHandle resourceHandle, K? encodingKey, long decompressedSize)
-            where K : notnull, IEncodingKey<K>, IKey, allows ref struct
+            where K : notnull, IEncodingKey<K>, allows ref struct
         {
-            using var memoryManager = resourceHandle.AsMappedMemory();
+            using var memoryManager = resourceHandle.ToMappedDataSource();
 
-            return ParseSchema(memoryManager.Span, encodingKey, decompressedSize);
+            return ParseSchema(memoryManager[..], encodingKey, decompressedSize);
         }
 
 

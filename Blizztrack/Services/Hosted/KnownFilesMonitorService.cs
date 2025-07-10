@@ -26,9 +26,8 @@ namespace Blizztrack.Services.Hosted
                         var resourceDescriptor = new ResourceDescriptor(ResourceType.Config, product, buildConfig.AsHexString());
                         var configurationFile = await _resourceLocator.OpenHandle(resourceDescriptor, stoppingToken);
 
-                        // TODO: Is there any benefit to pivoting to the new IDataSupplier<T> types here?
-                        using var mappedData = configurationFile.AsMappedMemory();
-                        return BuildConfiguration.Parse(mappedData.Span);
+                        using var mappedData = configurationFile.ToMappedDataSource();
+                        return BuildConfiguration.Parse(mappedData);
                     });
 
                 using var executionScope = serviceProvider.CreateScope();

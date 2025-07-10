@@ -16,13 +16,13 @@ namespace Blizztrack.Framework.TACT.Configuration
         /// <summary>
         /// Key pair for the encoding file itself.
         /// </summary>
-        public required (SizeAware<ContentKey> ContentKey, SizeAware<EncodingKey> EncodingKey) Encoding { get; init; }
+        public required SizedKeyPair<ContentKey, EncodingKey> Encoding { get; init; }
 
         /// <summary>
         /// Key pair for the install file. If the encoding key is <see cref="EncodingKey.Zero" />, look up
         /// the <see cref="ContentKey" /> in an instance of <see cref="Implementation.Encoding" />.
         /// </summary>
-        public required (SizeAware<ContentKey> ContentKey, SizeAware<EncodingKey> EncodingKey) Install { get; init; }
+        public required SizedKeyPair<ContentKey, EncodingKey> Install { get; init; }
 
         public static BuildConfiguration Parse(ReadOnlySpan<byte> fileData)
         {
@@ -70,8 +70,8 @@ namespace Blizztrack.Framework.TACT.Configuration
                 {
                     BuildName = buildName,
                     Root = rootHash,
-                    Encoding = (new(encodingHashes.C, encodingSizes[0]), new(encodingHashes.E, encodingSizes[1])),
-                    Install = (new(installHashes.C, installSizes[0]), new(installHashes.E, installSizes[1])),
+                    Encoding = new(new(encodingHashes.C, encodingSizes[0]), new(encodingHashes.E, encodingSizes[1])),
+                    Install = new(new(installHashes.C, installSizes[0]), new(installHashes.E, installSizes[1])),
                 };
             });
         }

@@ -8,7 +8,7 @@ namespace Blizztrack.Framework.TACT
     /// </summary>
     public interface IEncodingKey : IKey;
 
-    public interface IEncodingKey<T> where T : IEncodingKey<T>, allows ref struct
+    public interface IEncodingKey<T> : IKey<T>, IEncodingKey where T : IEncodingKey<T>, allows ref struct
     {
         public static abstract bool operator ==(T left, T right);
         public static abstract bool operator !=(T left, T right);
@@ -22,6 +22,8 @@ namespace Blizztrack.Framework.TACT
     public readonly ref struct EncodingKeyRef(ReadOnlySpan<byte> data) : IKeyView<EncodingKeyRef, EncodingKey>, IEncodingKey<EncodingKeyRef>
     {
         private readonly ReadOnlySpan<byte> _data = data;
+        public byte this[int offset] => _data[offset];
+        public int Length => _data.Length;
 
         internal unsafe EncodingKeyRef(byte* keyData, int keyLength) : this(new(keyData, keyLength)) { }
 
@@ -54,6 +56,8 @@ namespace Blizztrack.Framework.TACT
     public readonly struct EncodingKey(byte[] data) : IOwnedKey<EncodingKey>, IEncodingKey<EncodingKey>
     {
         private readonly byte[] _data = data;
+        public byte this[int offset] => _data[offset];
+        public int Length => _data.Length;
 
         public static EncodingKey Zero { get; } = new([]);
 

@@ -5,57 +5,61 @@ using System.Runtime.CompilerServices;
 
 using static Blizztrack.Shared.Extensions.BinarySearchExtensions;
 using Blizztrack.Shared;
-using Blizztrack.Framework.IO;
 using Blizztrack.Framework.TACT.Resources;
-using System.Text;
+using Blizztrack.Shared.IO;
 
 namespace Blizztrack.Framework.TACT.Implementation
 {
     /// <summary>
     /// An implementation of an encoding file.
     /// </summary>
-    public sealed class Encoding : IResourceParser<Encoding>
+    public sealed class Encoding : IResourceParser<Encoding>, IDisposable
     {
-        private readonly IBinaryDataSupplier _dataSupplier;
+        private readonly IDataSource _dataSupplier;
         private readonly EncodingSchema _header;
         private readonly Lazy<string[]> _encodingSpecs;
 
         #region IResourceParser
         public static Encoding OpenResource(ResourceHandle decompressedHandle)
-            => Open(decompressedHandle.ToMemoryMappedData());
+            => Open(decompressedHandle.ToMappedDataSource());
 
         public static Encoding OpenCompressedResource(ResourceHandle compressedHandle)
-            => Open(BLTE.Parse(compressedHandle).ToDataSupplier());
+            => Open(BLTE.Parse(compressedHandle).ToDataSource());
         #endregion
 
-        public static Encoding Open<T>(T dataSource) where T : IBinaryDataSupplier
+        public static Encoding Open<T>(T dataSource)
+            where T : notnull, IDataSource
         {
-            var (version, header) = ReadHeader(dataSource);
+            ReadOnlySpan<byte> mappedHandle = dataSource[..22];
+            var (version, header) = ReadHeader(mappedHandle);
 
             return new(dataSource, version, header, () =>
             {
                 var encodingSpecs = dataSource[header.EncodingSpec];
                 var accumulator = new List<string>();
 
-                while (encodingSpecs.Length != 0)
+                var encodingCursor = encodingSpecs[..];
+                while (encodingCursor.Length != 0)
                 {
-                    var entry = encodingSpecs.ReadCString();
+                    var entry = encodingCursor.ReadCString();
 
                     accumulator.Add(entry);
-                    encodingSpecs = encodingSpecs[(entry.Length + 1)..];
+                    encodingCursor = encodingCursor[(entry.Length + 1)..];
                 }
 
                 return [.. accumulator];
             });
         }
 
-        private Encoding(IBinaryDataSupplier dataSource, int version, EncodingSchema header, Func<string[]> encodingSpecs)
+        private Encoding(IDataSource dataSource, int version, EncodingSchema header, Func<string[]> encodingSpecs)
         {
             _dataSupplier = dataSource;
 
             _header = header;
             _encodingSpecs = new (encodingSpecs);
         }
+
+        public void Dispose() => _dataSupplier.Dispose();
 
         /// <summary>
         /// Returns an object able to enumerate entries in this file.
@@ -78,6 +82,7 @@ namespace Blizztrack.Framework.TACT.Implementation
             var targetPage = _header.CEKey.ResolvePage(_dataSupplier, contentKey.AsSpan());
             while (targetPage.Length != 0)
             {
+                // TODO: Figure out a way to binary search through this
                 var (entry, entrySize) = ParseEntry(targetPage, _header.EKeySize, _header.CKeySize);
                 Debug.Assert(entrySize > 0);
 
@@ -145,23 +150,23 @@ namespace Blizztrack.Framework.TACT.Implementation
             return new (new (recordContentKey, keyCount, recordEncodingKeys, fileSize), entrySize);
         }
 
-        private static unsafe (int, EncodingSchema) ReadHeader<T>(T dataSource) where T : IBinaryDataSupplier
+        private static unsafe (int, EncodingSchema) ReadHeader(ReadOnlySpan<byte> mappedHandle)
         {
-            if (dataSource[0] != 0x45 || dataSource[1] != 0x4E)
+            if (mappedHandle[0] != 0x45 || mappedHandle[1] != 0x4E)
                 throw new InvalidOperationException("Invalid signature in encoding file");
 
-            var version = dataSource[0x02];
+            var version = mappedHandle[0x02];
             if (version != 1)
                 throw new InvalidOperationException("Unsupported version in encoding");
 
-            var hashSizeCKey = dataSource[0x03];
-            var hashSizeEKey = dataSource[0x04];
-            var ckeyPageSize = dataSource[0x05..].ReadUInt16BE() * 1024;
-            var ekeyPageSize = dataSource[0x07..].ReadUInt16BE() * 1024;
-            var ckeyPageCount = dataSource[0x09..].ReadInt32BE();
-            var ekeyPageCount = dataSource[0x0D..].ReadInt32BE();
-            Debug.Assert(dataSource[0x11] == 0x00);
-            var especBlockSize = dataSource[0x12..].ReadInt32BE();
+            var hashSizeCKey = mappedHandle[0x03];
+            var hashSizeEKey = mappedHandle[0x04];
+            var ckeyPageSize = mappedHandle[0x05..].ReadUInt16BE() * 1024;
+            var ekeyPageSize = mappedHandle[0x07..].ReadUInt16BE() * 1024;
+            var ckeyPageCount = mappedHandle[0x09..].ReadInt32BE();
+            var ekeyPageCount = mappedHandle[0x0D..].ReadInt32BE();
+            Debug.Assert(mappedHandle[0x11] == 0x00);
+            var especBlockSize = mappedHandle[0x12..].ReadInt32BE();
 
             Range especRange = new (22, 22 + especBlockSize);
             Range ckeyHeaderRange = new (especRange.End, especRange.End.Value + ckeyPageCount * (hashSizeCKey + 0x10));
@@ -262,8 +267,8 @@ namespace Blizztrack.Framework.TACT.Implementation
             /// <remarks>
             /// The specification string array backing up this getter is lazily-loaded. 
             /// <para>
-            /// If the <see cref="Encoding{T}"/> file that is passed to
-            /// this method does not match the one that was used to obtain this instance, the results of this call are unspecified.
+            /// If the <see cref="Encoding"/> file that is passed to this method does not match the one that was used to obtain this instance,
+            /// the results of this call are unspecified.
             /// </para>
             /// </remarks>
             public readonly string GetSpecificationString(Encoding encoding) => encoding._encodingSpecs.Value[Index];
@@ -290,7 +295,7 @@ namespace Blizztrack.Framework.TACT.Implementation
             }
 
             public EncodingKeyRef this[int index] => _encodingKeys[index].AsKey<EncodingKeyRef>();
-            public EncodingKeyRef this[Index index] => this[index.GetOffset(Count)];
+            public EncodingKeyRef this[System.Index index] => this[index.GetOffset(Count)];
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public static implicit operator bool(Entry self) => self.Count != 0;
@@ -324,13 +329,13 @@ namespace Blizztrack.Framework.TACT.Implementation
 
             public readonly int PageCount => (_pages.End.Value - _pages.Start.Value) / _pageSize;
 
-            public readonly Enumerator<E> Enumerate(IBinaryDataSupplier fileData, int ekeySize, int ckeySize)
+            public readonly Enumerator<E> Enumerate(IDataSource fileData, int ekeySize, int ckeySize)
                 => new(fileData, _pages, _pageSize, ekeySize, ckeySize, parser);
 
-            public readonly Enumerator<E> EnumeratePage(IBinaryDataSupplier fileData, int ekeySize, int ckeySize, int pageIndex)
+            public readonly Enumerator<E> EnumeratePage(IDataSource fileData, int ekeySize, int ckeySize, int pageIndex)
                 => new(fileData, new Range(_pages.Start.Value + pageIndex * _pageSize, _pages.Start.Value + (pageIndex + 1) * _pageSize), _pageSize, ekeySize, ckeySize, parser);
 
-            public readonly ReadOnlySpan<byte> ResolvePage(IBinaryDataSupplier fileData, ReadOnlySpan<byte> needle)
+            public readonly ReadOnlySpan<byte> ResolvePage(IDataSource fileData, ReadOnlySpan<byte> needle)
             {
                 Debug.Assert(needle.Length <= _headerEntrySize);
 
@@ -368,20 +373,20 @@ namespace Blizztrack.Framework.TACT.Implementation
         /// <remarks>This object has <see cref="IDisposable"/> semantics and <b>must</b> be used in an <c>using</c> block.</remarks>
         public unsafe struct Enumerator<E> where E : notnull, allows ref struct
         {
-            private readonly IBinaryDataSupplier _memoryManager;
+            private readonly IDataSource _memoryManager;
             private readonly delegate*<ReadOnlySpan<byte>, int, int, ParsedValue<E>> _parser;
             private readonly int _ekeySize;
             private readonly int _ckeySize;
 
-            private readonly int _pageStart;       // Start of all pages
-            private readonly int _pageSize;          // Size of a page
-            private int _pageIndex = 0;              // Current page index
-            private readonly int _pageCount;         // Amount of pages
+            private readonly int _pageStart; // Start of all pages
+            private readonly int _pageSize;  // Size of a page
+            private int _pageIndex = 0;      // Current page index
+            private readonly int _pageCount; // Amount of pages
 
-            private int _entryOffset = 0;            // Offset of the current entry
+            private int _entryOffset = 0;    // Offset of the current entry
             private int _entrySize = 0;
 
-            internal Enumerator(IBinaryDataSupplier memoryManager, Range pages, int pageSize,
+            internal Enumerator(IDataSource memoryManager, Range pages, int pageSize,
                 int ekeySize, int ckeySize,
                 delegate*<ReadOnlySpan<byte>, int, int, ParsedValue<E>> parser)
             {

@@ -19,9 +19,24 @@ namespace Blizztrack.Framework.TACT
         public string AsHexString();
 
         public bool SequenceEqual<U>(U other) where U : notnull, IKey, allows ref struct;
+
+        public byte this[int index] { get; }
+        public int Length { get; }
     }
 
-    public record struct KeyPair<T, U>(T Content, T Encoding);
+    public record struct SizeAware<T>(T Key, long Size)
+        where T : IKey<T>
+    {
+        public static implicit operator T(SizeAware<T> self) => self.Key;
+    }
+
+    public record struct SizedKeyPair<T, U>(SizeAware<T> Content, SizeAware<U> Encoding)
+        where T : IContentKey<T>
+        where U : IEncodingKey<U>;
+
+    public record struct KeyPair<T, U>(T Content, U Encoding)
+        where T : IContentKey<T>
+        where U : IEncodingKey<U>;
 
     /// <summary>
     /// Typed equivalent of <see cref="IKey"/> that also requires the implementation to be <see cref="IEquatable{T}"/>.
@@ -283,8 +298,8 @@ namespace Blizztrack.Framework.TACT
             return (T.FromString(bytes[tokens[0]]), U.FromString(bytes[tokens[1]]));
         }
 
-        public static T AsKey<T>(this string @string)
-            where T : IOwnedKey<T>
+        [MethodImpl(MethodImplOptions.AggressiveInlining), Pure]
+        public static T AsKey<T>(this string @string) where T : IOwnedKey<T>
             => T.FromString(@string);
     }
 }

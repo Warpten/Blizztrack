@@ -1,4 +1,6 @@
-﻿namespace Blizztrack.Shared.Extensions
+﻿using System.Runtime.CompilerServices;
+
+namespace Blizztrack.Shared.Extensions
 {
     public static class RangeExtensions
     {
@@ -8,6 +10,7 @@
         /// <param name="range"></param>
         /// <param name="offset"></param>
         /// <returns>A new range.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static Range Shift(this Range range, int offset)
             => new(range.Start.Value + offset, range.End.Value + offset);
 
@@ -17,6 +20,7 @@
         /// <param name="range"></param>
         /// <param name="newBase">The range to treat as a base.</param>
         /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static Range Rebase(this Range range, Range newBase)
             => range.Shift(newBase.Start.Value);
 
@@ -80,6 +84,7 @@
             return new(startOffset, endOffset + 1);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static Range TrimCore<T>(Range range, ReadOnlySpan<T> reference, IEqualityComparer<T> cmp, ReadOnlySpan<T> items, bool left, bool right)
         {
             var startOffset = range.Start.Value;

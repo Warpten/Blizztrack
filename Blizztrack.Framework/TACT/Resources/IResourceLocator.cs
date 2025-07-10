@@ -1,5 +1,7 @@
 ﻿using Blizztrack.Framework.TACT.Implementation;
 
+using System.Runtime.CompilerServices;
+
 namespace Blizztrack.Framework.TACT.Resources
 {
     public interface IResourceLocator
@@ -10,7 +12,7 @@ namespace Blizztrack.Framework.TACT.Resources
         /// <param name="resourceDescriptor"></param>
         /// <param name="stoppingToken"></param>
         /// <returns></returns>
-        public Task<ResourceHandle> OpenHandle(ResourceDescriptor resourceDescriptor, CancellationToken stoppingToken);
+        public Task<ResourceHandle> OpenHandle(ResourceDescriptor resourceDescriptor, CancellationToken stoppingToken = default);
 
         /// <summary>
         /// Opens a compressed resource.
@@ -22,8 +24,8 @@ namespace Blizztrack.Framework.TACT.Resources
         /// <param name="stoppingToken">A cancellation token that will be signaled of the operation needs to be canceled.</param>
         /// <returns></returns>
         /// <exception cref="OperationCanceledException">If the operation represented by this method needs to be cancelled.</exception>
-        public Task<T> OpenCompressed<T, E>(string productCode, E encodingKey, CancellationToken stoppingToken)
-            where E : IEncodingKey<E>, IKey, allows ref struct
+        public Task<T> OpenCompressed<E, T>(string productCode, E encodingKey, CancellationToken stoppingToken = default)
+            where E : IEncodingKey<E>, allows ref struct
             where T : class, IResourceParser<T>;
 
         /// <summary>
@@ -35,8 +37,8 @@ namespace Blizztrack.Framework.TACT.Resources
         /// <param name="stoppingToken">A cancellation token that will be signaled of the operation needs to be canceled.</param>
         /// <returns></returns>
         /// <exception cref="OperationCanceledException">If the operation represented by this method needs to be cancelled.</exception>
-        public Task<ResourceHandle> OpenCompressedHandle<E>(string productCode, E encodingKey, CancellationToken stoppingToken)
-            where E : IEncodingKey<E>, IKey, allows ref struct;
+        public Task<ResourceHandle> OpenCompressedHandle<E>(string productCode, E encodingKey, CancellationToken stoppingToken = default)
+            where E : IEncodingKey<E>, allows ref struct;
 
         /// <summary>
         /// Opens a compressed resource.
@@ -50,10 +52,11 @@ namespace Blizztrack.Framework.TACT.Resources
         /// <param name="stoppingToken">A cancellation token that will be signaled of the operation needs to be canceled.</param>
         /// <returns></returns>
         /// <exception cref="OperationCanceledException">If the operation represented by this method needs to be cancelled.</exception>
-        public Task<T> OpenCompressed<E, C, T>(string productCode, E encodingKey, C contentKey, CancellationToken stoppingToken)
-            where E : IEncodingKey<E>, IKey, allows ref struct
-            where C : IContentKey<C>, IKey, allows ref struct
+        public Task<T> OpenCompressed<E, C, T>(string productCode, E encodingKey, C contentKey, CancellationToken stoppingToken = default)
+            where E : IEncodingKey<E>, allows ref struct
+            where C : IContentKey<C>, allows ref struct
             where T : class, IResourceParser<T>;
+
 
         /// <summary>
         /// Opens a compressed resource.
@@ -66,9 +69,71 @@ namespace Blizztrack.Framework.TACT.Resources
         /// <param name="stoppingToken">A cancellation token that will be signaled of the operation needs to be canceled.</param>
         /// <returns></returns>
         /// <exception cref="OperationCanceledException">If the operation represented by this method needs to be cancelled.</exception>
-        public Task<ResourceHandle> OpenCompressedHandle<E, C>(string productCode, E encodingKey, C contentKey, CancellationToken stoppingToken)
-            where E : IEncodingKey<E>, IKey, allows ref struct
-            where C : IContentKey<C>, IKey, allows ref struct;
+        public Task<ResourceHandle> OpenCompressedHandle<E, C>(string productCode, E encodingKey, C contentKey, CancellationToken stoppingToken = default)
+            where E : IEncodingKey<E>, allows ref struct
+            where C : IContentKey<C>, allows ref struct;
+    }
+
+    //< Utility wrappers that should not be overridable.
+    public static class ResourceLocatorExtensions
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Task<T> OpenCompressed<U, E, T>(this U self, string productCode, SizeAware<E> encodingKey, CancellationToken stoppingToken = default)
+            where U : IResourceLocator
+            where E : IEncodingKey<E>
+            where T : class, IResourceParser<T>
+            => self.OpenCompressed<E, T>(productCode, encodingKey.Key, stoppingToken);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Task<ResourceHandle> OpenCompressedHandle<U, E, T>(this U self, string productCode, SizeAware<E> encodingKey, CancellationToken stoppingToken = default)
+            where U : IResourceLocator
+            where E : IEncodingKey<E>
+            => self.OpenCompressedHandle(productCode, encodingKey.Key, stoppingToken);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Task<T> OpenCompressed<U, E, C, T>(this U self, string productCode, SizeAware<E> encodingKey, SizeAware<C> contentKey, CancellationToken stoppingToken = default)
+            where U : IResourceLocator
+            where E : IEncodingKey<E>
+            where C : IContentKey<C>
+            where T : class, IResourceParser<T>
+            => self.OpenCompressed<E, C, T>(productCode, encodingKey.Key, contentKey.Key, stoppingToken);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Task<T> OpenCompressed<U, E, C, T>(this U self, string productCode, KeyPair<C, E> keys, CancellationToken stoppingToken = default)
+            where U : IResourceLocator
+            where E : IEncodingKey<E>
+            where C : IContentKey<C>
+            where T : class, IResourceParser<T>
+            => self.OpenCompressed<E, C, T>(productCode, keys.Encoding, keys.Content, stoppingToken);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Task<T> OpenCompressed<U, E, C, T>(this U self, string productCode, SizedKeyPair<C, E> keys, CancellationToken stoppingToken = default)
+            where U : IResourceLocator
+            where E : IEncodingKey<E>
+            where C : IContentKey<C>
+            where T : class, IResourceParser<T>
+            => self.OpenCompressed<E, C, T>(productCode, keys.Encoding.Key, keys.Content.Key, stoppingToken);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Task<ResourceHandle> OpenCompressedHandle<U, E, C>(this U self, string productCode, SizeAware<E> encodingKey, SizeAware<C> contentKey, CancellationToken stoppingToken = default)
+            where U : IResourceLocator
+            where E : IEncodingKey<E>
+            where C : IContentKey<C>
+            => self.OpenCompressedHandle<E, C>(productCode, encodingKey.Key, contentKey.Key, stoppingToken);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Task<ResourceHandle> OpenCompressedHandle<U, E, C>(this U self, string productCode, KeyPair<C, E> keys, CancellationToken stoppingToken = default)
+            where U : IResourceLocator
+            where E : IEncodingKey<E>
+            where C : IContentKey<C>
+            => self.OpenCompressedHandle<E, C>(productCode, keys.Encoding, keys.Content, stoppingToken);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Task<ResourceHandle> OpenCompressedHandle<U, E, C>(this U self, string productCode, SizedKeyPair<C, E> keys, CancellationToken stoppingToken = default)
+            where U : IResourceLocator
+            where E : IEncodingKey<E>
+            where C : IContentKey<C>
+            => self.OpenCompressedHandle<E, C>(productCode, keys.Encoding.Key, keys.Content.Key, stoppingToken);
     }
 
     public record struct PatchEndpoint(string Host, string DataStem, string ConfigurationStem);

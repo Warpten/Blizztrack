@@ -44,6 +44,8 @@ namespace Blizztrack.Options
     {
         public TimeSpan Encoding { get; init; } = TimeSpan.FromMinutes(10);
         public TimeSpan Install { get; init; } = TimeSpan.FromMinutes(10);
+        public TimeSpan Root { get; init; } = TimeSpan.FromMinutes(10);
+        public TimeSpan Indice { get; init; } = TimeSpan.FromMinutes(10);
     }
 
     public class RibbitSettings

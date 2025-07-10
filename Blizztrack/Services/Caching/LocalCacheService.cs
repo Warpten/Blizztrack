@@ -3,7 +3,7 @@ using Blizztrack.Options;
 
 using Microsoft.Extensions.Options;
 
-namespace Blizztrack.Services
+namespace Blizztrack.Services.Caching
 {
     /// <summary>
     /// This service provides access to files on disk, given a <see cref="ResourceDescriptor" />.

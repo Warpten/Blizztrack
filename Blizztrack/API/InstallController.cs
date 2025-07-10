@@ -2,7 +2,7 @@
 
 using Blizztrack.Framework.TACT;
 using Blizztrack.Framework.TACT.Implementation;
-using Blizztrack.Services;
+using Blizztrack.Services.Caching;
 
 using Microsoft.AspNetCore.Mvc;
 
@@ -19,7 +19,7 @@ namespace Blizztrack.API
     [ApiVersion(1.0), Tags("Utility endpoints")]
     [SwaggerResponse(HttpStatusCode.NotFound, null, Description = "If the install manifest file could not be found.")]
     [ApiController, Route("api/v{version:apiVersion}/install")]
-    public class InstallController(InstallRepository installRepository) : ControllerBase
+    public class InstallController(InstallCache installRepository) : ControllerBase
     {
         [HttpGet("{installManifest}/entries")]
         [SwaggerResponse(HttpStatusCode.OK, typeof(DetailedInstallEntry[]), Description = "Information about all files within the manifest.")]

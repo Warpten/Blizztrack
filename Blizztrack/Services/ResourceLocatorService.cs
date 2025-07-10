@@ -3,9 +3,9 @@ using Blizztrack.Framework.TACT.Implementation;
 using Blizztrack.Framework.TACT.Resources;
 using Blizztrack.Options;
 using Blizztrack.Persistence;
+using Blizztrack.Services.Caching;
 
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 
 using Polly;
@@ -43,6 +43,23 @@ namespace Blizztrack.Services
         private readonly IHttpClientFactory _clientFactory;
         private readonly IOptionsMonitor<Settings> _settings;
 
+        //! TODO: Nop this out if non-telemetry enabled builds become a thing
+        private static Activity? BeginActivity<E, C>(string activityCode, string productCode, E encodingKey, C contentKey)
+            where E : IEncodingKey<E>, allows ref struct
+            where C : IContentKey<C>, allows ref struct
+        {
+            var activity = ActivitySupplier.StartActivity(activityCode);
+            if (activity is not null && activity.IsAllDataRequested)
+            {
+                activity.SetTag("blizztrack.blte.product", productCode);
+                activity.SetTag("blizztrack.blte.ckey", contentKey.AsHexString());
+                activity.SetTag("blizztrack.blte.ekey", encodingKey.AsHexString());
+            }
+
+            return activity;
+        }
+
+
         public ResourceLocatorService(IHttpClientFactory clientFactory, IServiceProvider serviceProvider)
         {
             _clientFactory = clientFactory;
@@ -76,16 +93,11 @@ namespace Blizztrack.Services
 
         // VALIDATED API
         public Task<T> OpenCompressed<E, C, T>(string productCode, E encodingKey, C contentKey, CancellationToken stoppingToken)
-            where E : IEncodingKey<E>, IKey, allows ref struct
-            where C : IContentKey<C>, IKey, allows ref struct
+            where E : IEncodingKey<E>, allows ref struct
+            where C : IContentKey<C>, allows ref struct
             where T : class, IResourceParser<T>
         {
-            using var activity = ActivitySupplier.StartActivity("blizztrack.resources.open_compressed");
-            if (activity is not null && activity.IsAllDataRequested) {
-                activity.SetTag("blizztrack.blte.product", productCode);
-                activity.SetTag("blizztrack.blte.ckey", contentKey.AsHexString());
-                activity.SetTag("blizztrack.blte.ekey", encodingKey.AsHexString());
-            }
+            using var activity = BeginActivity("blizztrack.resources.open_compressed", productCode, encodingKey, contentKey);
 
             var compressedDescriptor = new ResourceDescriptor(ResourceType.Data, productCode, encodingKey.AsHexString());
             var decompressedDescriptor = new ResourceDescriptor(ResourceType.Decompressed, productCode, contentKey.AsHexString());
@@ -93,16 +105,10 @@ namespace Blizztrack.Services
         }
 
         public Task<ResourceHandle> OpenCompressedHandle<E, C>(string productCode, E encodingKey, C contentKey, CancellationToken stoppingToken)
-            where E : IEncodingKey<E>, IKey, allows ref struct
-            where C : IContentKey<C>, IKey, allows ref struct
+            where E : IEncodingKey<E>, allows ref struct
+            where C : IContentKey<C>, allows ref struct
         {
-            using var activity = ActivitySupplier.StartActivity("blizztrack.resources.open_compressed");
-            if (activity is not null && activity.IsAllDataRequested)
-            {
-                activity.SetTag("blizztrack.blte.product", productCode);
-                activity.SetTag("blizztrack.blte.ckey", contentKey.AsHexString());
-                activity.SetTag("blizztrack.blte.ekey", encodingKey.AsHexString());
-            }
+            using var activity = BeginActivity("blizztrack.resources.open_compressed_handle", productCode, encodingKey, contentKey);
 
             var compressedDescriptor = new ResourceDescriptor(ResourceType.Data, productCode, encodingKey.AsHexString());
             var decompressedDescriptor = new ResourceDescriptor(ResourceType.Decompressed, productCode, contentKey.AsHexString());
@@ -110,14 +116,14 @@ namespace Blizztrack.Services
         }
 
         // VALIDATED API
-        public Task<T> OpenCompressed<T, E>(string productCode, E encodingKey, CancellationToken stoppingToken)
-            where E : IEncodingKey<E>, IKey, allows ref struct
+        public Task<T> OpenCompressed<E, T>(string productCode, E encodingKey, CancellationToken stoppingToken)
+            where E : IEncodingKey<E>, allows ref struct
             where T : class, IResourceParser<T>
             => OpenCompressedImpl<T>(new ResourceDescriptor(ResourceType.Data, productCode, encodingKey.AsHexString()), stoppingToken);
 
         // VALIDATED API
         public Task<ResourceHandle> OpenCompressedHandle<E>(string productCode, E encodingKey, CancellationToken stoppingToken)
-            where E : IEncodingKey<E>, IKey, allows ref struct
+            where E : IEncodingKey<E>, allows ref struct
             => OpenCompressedHandle(new ResourceDescriptor(ResourceType.Data, productCode, encodingKey.AsHexString()), stoppingToken);
 
         public async Task<ResourceHandle> OpenCompressedHandle(ResourceDescriptor compressedDescriptor, CancellationToken stoppingToken)

@@ -1,6 +1,8 @@
-﻿using Blizztrack.Shared.Extensions;
+﻿using Blizztrack.Framework.IO;
 using Blizztrack.Framework.TACT.Resources;
-using Blizztrack.Framework.IO;
+using Blizztrack.Shared.Extensions;
+using Blizztrack.Shared.IO;
+
 using System.Runtime.CompilerServices;
 
 namespace Blizztrack.Framework.TACT.Implementation
@@ -24,13 +26,13 @@ namespace Blizztrack.Framework.TACT.Implementation
 
         #region IResourceParser
         public static Install OpenResource(ResourceHandle decompressedHandle)
-            => Open(decompressedHandle.ToMemoryMappedData());
+            => Open(decompressedHandle.ToMappedDataSource());
 
         public static Install OpenCompressedResource(ResourceHandle compressedHandle)
-            => Open(BLTE.Parse(compressedHandle).ToDataSupplier());
+            => Open(BLTE.Parse(compressedHandle).ToDataSource());
         #endregion
 
-        public static Install Open<T>(T fileData) where T : IBinaryDataSupplier
+        public static Install Open<T>(T fileData) where T : IDataSource
         {
             if (fileData[0] != 0x49 || fileData[1] != 0x4E)
                 throw new InvalidOperationException(); // TODO: Throw a better exception

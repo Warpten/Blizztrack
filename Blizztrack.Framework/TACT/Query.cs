@@ -55,11 +55,11 @@ namespace Blizztrack.Framework.TACT
     {
         public static FilteredQuery<T, Encoding, Entry, K> WithEncodingKey<T, K>(this T query, K encodingKey)
             where T : IEncodingQuery
-            where K : IEncodingKey<K>, IKey, allows ref struct
+            where K : IEncodingKey<K>, allows ref struct
             => new(query, &HasEncodingKey, encodingKey);
 
         private static bool HasEncodingKey<K>(Entry r, K key)
-            where K : IEncodingKey<K>, IKey, allows ref struct
+            where K : IEncodingKey<K>, allows ref struct
         {
             for (var i = 0; i < r.Count; ++i)
                 if (r[i].SequenceEqual(key))

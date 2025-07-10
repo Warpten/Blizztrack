@@ -7,6 +7,7 @@ using Blizztrack.Options;
 using Blizztrack.Persistence;
 using Blizztrack.Persistence.Translators;
 using Blizztrack.Services;
+using Blizztrack.Services.Caching;
 using Blizztrack.Services.Hosted;
 
 using Microsoft.EntityFrameworkCore;
@@ -126,8 +127,8 @@ namespace Blizztrack
                 .AddSingleton<LocalCacheService>()
                 .AddSingleton<IResourceLocator, ResourceLocatorService>()
                 // Repositories that provide shared instances of various TACT file types.
-                .AddSingleton<InstallRepository>()
-                .AddSingleton<EncodingRepository>()
+                .AddSingleton<InstallCache>()
+                .AddSingleton<EncodingCache>()
                 // Discord API
                 // .AddDiscordGateway()
                 // .AddApplicationCommands()

@@ -5,7 +5,7 @@ using Blizztrack.Framework.TACT;
 using Blizztrack.Framework.TACT.Implementation;
 using Blizztrack.Framework.TACT.Resources;
 using Blizztrack.Persistence;
-using Blizztrack.Services;
+using Blizztrack.Services.Caching;
 
 using Microsoft.AspNetCore.Mvc;
 
@@ -22,7 +22,7 @@ namespace Blizztrack.API
     [ApiVersion(1.0)]
     [Tags("Utility endpoints"), OpenApiTag("Utility endpoints", Description = "Endpoints in this category provide utilities to manipulate and explore architectural TACT files.")]
     [ApiController, Route("api/v{version:apiVersion}/encoding")]
-    public class EncodingController(EncodingRepository encodingRepository) : ControllerBase
+    public class EncodingController(EncodingCache encodingRepository) : ControllerBase
     {
         [HttpGet("{product}/{encodingManifest}/{pageIndex}")]
         [OpenApiOperation("Enumerate encoding manifest entries", """
