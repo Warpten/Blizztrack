@@ -1,10 +1,7 @@
 ﻿using Asp.Versioning;
 
-using Blizztrack.Framework.IO;
 using Blizztrack.Framework.TACT;
 using Blizztrack.Framework.TACT.Implementation;
-using Blizztrack.Framework.TACT.Resources;
-using Blizztrack.Persistence;
 using Blizztrack.Services.Caching;
 
 using Microsoft.AspNetCore.Mvc;
@@ -12,7 +9,6 @@ using Microsoft.AspNetCore.Mvc;
 using NSwag.Annotations;
 
 using System.ComponentModel;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 using static Blizztrack.API.EncodingController.EncodingEntry;

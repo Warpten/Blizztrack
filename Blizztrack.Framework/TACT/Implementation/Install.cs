@@ -1,5 +1,4 @@
-﻿using Blizztrack.Framework.IO;
-using Blizztrack.Framework.TACT.Resources;
+﻿using Blizztrack.Framework.TACT.Resources;
 using Blizztrack.Shared.Extensions;
 using Blizztrack.Shared.IO;
 
