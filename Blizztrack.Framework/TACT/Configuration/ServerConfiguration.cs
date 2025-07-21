@@ -1,4 +1,6 @@
-﻿using System.Diagnostics;
+﻿using Blizztrack.Shared.IO;
+
+using System.Diagnostics;
 
 using static System.MemoryExtensions;
 
@@ -10,7 +12,8 @@ namespace Blizztrack.Framework.TACT.Configuration
         public readonly SizeAware<EncodingKey> FileIndex = fileIndex;
         public readonly EncodingKey ArchiveGroup = archiveGroup;
 
-        public ServerConfiguration Parse(ReadOnlySpan<byte> fileData)
+        public ServerConfiguration Parse<T>(T fileData)
+            where T : IDataSource
         {
             return ConfigurationFile.Parse(fileData, (properties, values, data) =>
             {

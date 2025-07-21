@@ -30,7 +30,7 @@ namespace Blizztrack.Services.Caching
             where C : IContentKey<C>
             where E : IEncodingKey<E>
             => _cache.GetOrSetAsync($"{fileIdentifier}:{encodingKey.AsHexString()}",
-                async token => await OpenHandle(productCode, encodingKey, contentKey, token),
+                token => OpenHandle(productCode, encodingKey, contentKey, token),
                 new FusionCacheEntryOptions() {
                     Duration = durationGetter(_settings.CurrentValue.Cache.Expirations),
                 }, stoppingToken);

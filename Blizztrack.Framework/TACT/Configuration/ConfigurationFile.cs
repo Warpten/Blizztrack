@@ -1,4 +1,5 @@
 ﻿using Blizztrack.Shared.Extensions;
+using Blizztrack.Shared.IO;
 
 using static System.MemoryExtensions;
 
@@ -8,8 +9,12 @@ namespace Blizztrack.Framework.TACT.Configuration
     {
         public delegate T Handler<T>(Range[] names, Range[] values, ReadOnlySpan<byte> fileData) where T : notnull;
 
-        public static T Parse<T>(ReadOnlySpan<byte> fileData, Handler<T> handler) where T : notnull
+        public static T Parse<T, TSource>(TSource dataSource, Handler<T> handler)
+            where T : notnull
+            where TSource : IDataSource
         {
+            var fileData = dataSource[..];
+
             var properties = new List<Range>();
             var values = new List<Range>();
 

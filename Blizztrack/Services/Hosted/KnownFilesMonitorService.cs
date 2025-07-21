@@ -36,14 +36,14 @@ namespace Blizztrack.Services.Hosted
                 {
                     var buildConfiguration = await buildTask;
 
-                    var entity = databaseContext.KnownResources.SingleOrDefault(e => e.EncodingKey == buildConfiguration.Encoding.EncodingKey.Key);
+                    var entity = databaseContext.KnownResources.SingleOrDefault(e => e.EncodingKey == buildConfiguration.Encoding.Encoding.Key);
                     if (entity != null)
                         continue;
 
                     databaseContext.KnownResources.Add(new KnownResource()
                     {
-                        ContentKey = buildConfiguration.Encoding.ContentKey.Key,
-                        EncodingKey = buildConfiguration.Encoding.EncodingKey.Key,
+                        ContentKey = buildConfiguration.Encoding.Content.Key,
+                        EncodingKey = buildConfiguration.Encoding.Encoding.Key,
                         Specification = "",
                     });
                 }

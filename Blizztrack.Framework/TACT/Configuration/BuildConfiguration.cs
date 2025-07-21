@@ -1,4 +1,6 @@
-﻿using System.Diagnostics;
+﻿using Blizztrack.Shared.IO;
+
+using System.Diagnostics;
 
 using static System.MemoryExtensions;
 
@@ -24,7 +26,8 @@ namespace Blizztrack.Framework.TACT.Configuration
         /// </summary>
         public required SizedKeyPair<ContentKey, EncodingKey> Install { get; init; }
 
-        public static BuildConfiguration Parse(ReadOnlySpan<byte> fileData)
+        public static BuildConfiguration Parse<T>(T fileData)
+            where T : IDataSource
         {
             return ConfigurationFile.Parse(fileData, (properties, values, data) =>
             {

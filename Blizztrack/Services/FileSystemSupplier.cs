@@ -35,11 +35,13 @@ namespace Blizztrack.Services
                 ? await OpenIndex(productCode, cdnConfiguration.FileIndex.Key, locator, stoppingToken)
                 : default;
 
-            return new FileSystem<CompoundingIndex>(productCode, compoundedIndex, encoding, root, install, fileIndex);
+#pragma warning disable BT002
+            return new FileSystem<CompoundingIndex, Index<MappedDataSource>>(productCode, compoundedIndex, encoding, root, install, fileIndex);
+#pragma warning restore BT002
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static async Task<Index> OpenIndex(string productCode, EncodingKey encodingKey, IResourceLocator locator, CancellationToken stoppingToken)
+        private static async Task<Index<MappedDataSource>> OpenIndex(string productCode, EncodingKey encodingKey, IResourceLocator locator, CancellationToken stoppingToken)
         {
             var descriptor = new ResourceDescriptor(ResourceType.Indice, productCode, encodingKey.AsSpan());
             var handle = await locator.OpenHandle(descriptor, stoppingToken);
@@ -51,11 +53,12 @@ namespace Blizztrack.Services
         {
             var encoding = await encodingRepository.Obtain(productCode, buildConfiguration.Encoding.Content.Key, buildConfiguration.Encoding.Encoding.Key, stoppingToken);
 
-            var rootEntry = encoding.FindContentKey(buildConfiguration.Root);
-            for (var i = 0; i < rootEntry.Count; ++i)
+            var encodingEntry = encoding.FindContentKey(buildConfiguration.Root);
+            var encodingKeys = encodingEntry.Keys; // Forced in order to go through async boundary.
+
+            for (var i = 0; i < encodingKeys.Length; ++i)
             {
-                // Have to transition to an owning type for the corresponding ekey so that async boundary can be crossed
-                var root = await rootRepository.Obtain(productCode, buildConfiguration.Root, rootEntry[i].AsOwned(), stoppingToken);
+                var root = await rootRepository.Obtain(productCode, buildConfiguration.Root, encodingKeys[i], stoppingToken);
                 if (root != null)
                     return (encoding, root);
             }

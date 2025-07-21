@@ -1,19 +1,10 @@
-﻿using Blizztrack.Shared.IO;
-
-using static Blizztrack.Framework.TACT.Implementation.Index;
-
-namespace Blizztrack.Framework.TACT.Implementation
+﻿namespace Blizztrack.Framework.TACT.Implementation
 {
     public interface IIndex
     {
-        public EncodingKey Key { get; }
-
-        public Entry FindEncodingKey<T>(T encodingKey)
-            where T : notnull, IEncodingKey<T>, allows ref struct;
-
-        public Enumerator Entries { get; }
-        public int Count { get; }
-
+        /// <summary>
+        /// A record within an archive index.
+        /// </summary>
         public readonly ref struct Entry
         {
             internal Entry(EncodingKeyRef key, int offset, long length, EncodingKey archive)
@@ -40,69 +31,43 @@ namespace Blizztrack.Framework.TACT.Implementation
             public readonly long Length;
 
             /// <summary>
-            /// The name of the archive that contains this record.
+            /// The encoding key that describes the archive holding the resource described by this object.
             /// </summary>
             public readonly EncodingKey Archive;
 
             public static implicit operator bool(Entry entry) => entry.EncodingKey != default!;
         }
 
-        public unsafe struct Enumerator
-        {
-            private readonly EncodingKey[] _archiveNames;
-            private readonly IDataSource _dataSource;
-            private readonly delegate*<ReadOnlySpan<byte>, int, int, int, InternalEntry> _parser;
-            private readonly int _pageCount;
-            private readonly int _pageSize; // Size of a single page
-            private readonly (int K, int O, int S) _schema; // (key, offset, size) bytes
+        /// <summary>
+        /// Resolves an encoding key within this index.
+        /// </summary>
+        /// <typeparam name="T">A type that implements <see cref="IEncodingKey{T}"/>.</typeparam>
+        /// <param name="encodingKey">The encoding key to search for.</param>
+        /// <returns></returns>
+        public Entry FindEncodingKey<T>(T encodingKey)
+            where T : notnull, IEncodingKey<T>, allows ref struct;
 
-            private int _pageIndex = 0; // Index of the current page
-            private int _entryOffset = 0; // Offset within the current page
+        public Entry this[int index] { get; }
+        public Entry this[System.Index index] { get; }
 
-            internal Enumerator(IDataSource dataSource, EncodingKey[] archiveNames,
-                int pageSize, int pageCount,
-                (int, int, int) schema,
-                delegate*<ReadOnlySpan<byte>, int, int, int, InternalEntry> parser)
-            {
-                _dataSource = dataSource;
-                _archiveNames = archiveNames;
-                _parser = parser;
+        /// <summary>
+        /// The amount of entries within this index.
+        /// </summary>
+        public int Count { get; }
+    }
 
-                _pageSize = pageSize;
-                _pageCount = pageCount;
+    // Decorator interface to constraint types. FOrces proper duck-typing for enumerator types.
+    public interface IIndexEnumerator<T> where T : allows ref struct
+    {
+        public T GetEnumerator();
 
-                _schema = schema;
-            }
+        public bool MoveNext();
 
-            public readonly Enumerator GetEnumerator() => this;
+        public IIndex.Entry Current { get; }
+    }
 
-            public bool MoveNext()
-            {
-                if (_pageIndex >= _pageCount)
-                    return false;
-
-                var entrySize = _schema.K + _schema.O + _schema.S;
-                _entryOffset += entrySize;
-                if (_entryOffset >= _pageSize)
-                {
-                    ++_pageIndex;
-                    _entryOffset = 0;
-                }
-
-                return _pageIndex < _pageCount;
-            }
-
-            public Entry Current
-            {
-                get
-                {
-                    var entrySize = _schema.K + _schema.O + _schema.S;
-                    var remainingPageData = _dataSource.Slice(_pageSize * _pageIndex + _entryOffset, entrySize);
-                    var rawEntry = _parser(remainingPageData, _schema.K, _schema.O, _schema.S);
-                    return new Entry(rawEntry.EncodingKey, rawEntry.Offset, rawEntry.Length, _archiveNames[rawEntry.ArchiveIndex]);
-                }
-            }
-        }
-
+    public interface IIndex<E> : IIndex where E : notnull, IIndexEnumerator<E>, allows ref struct
+    {
+        public E Entries { get; }
     }
 }

@@ -1,22 +1,43 @@
 ﻿using Blizztrack.Shared.Extensions;
 
+using System.Runtime.CompilerServices;
+
 using static Blizztrack.Framework.TACT.Implementation.IIndex;
 
 namespace Blizztrack.Framework.TACT.Implementation
 {
-    public sealed class CompoundingIndex(Index[] indices) : IIndex
+    /// <summary>
+    /// An index that aggregates multiple indices. This is <b>not</b> an implementation of
+    /// <c>group-index</c>.
+    /// </summary>
+    /// <param name="indices"></param>
+    public sealed class CompoundingIndex(IIndex[] indices) : IIndex
     {
-        private readonly Index[] _indices = indices;
+        private readonly IIndex[] _indices = indices;
 
-        private readonly EncodingKey[] _keys = [.. indices.Select(i => i.Key)];
+        public Entry this[int index]
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get
+            {
+                var indiceIndex = 0;
+                while (indiceIndex < _indices.Length)
+                {
+                    ref var currentIndex = ref _indices.UnsafeIndex(indiceIndex);
+                    var indexSize = currentIndex.Count;
+                    if (index < indexSize)
+                        return currentIndex[index];
 
-        public EncodingKey Key { get; } = default;
+                    index -= indexSize;
+                }
+
+                throw new ArgumentOutOfRangeException(nameof(index));
+            }
+        }
+
+        public Entry this[System.Index index] => this[index.GetOffset(Count)];
+
         public int Count => _indices.Sum(i => i.Count);
-
-        // Actually not trivial to implement; we should have some sort of switching sub-implementation
-        // - but the design of value-typed enumerators forbids interfaces, and typing IIndex on its enumerator is....
-        // icky.
-        public Enumerator Entries => throw new NotImplementedException();
 
         public Entry FindEncodingKey<T>(T encodingKey) where T : notnull, IEncodingKey<T>, allows ref struct
         {
@@ -28,8 +49,8 @@ namespace Blizztrack.Framework.TACT.Implementation
             if (archiveIndex > _indices.Length)
                 return default;
 
-            var rawEntry = _indices.UnsafeIndex(archiveIndex).FindEncodingKey(encodingKey);
-            return new(rawEntry.EncodingKey, rawEntry.Offset, rawEntry.Length, _indices[archiveIndex].Key);
+            ref var containingIndex = ref _indices.UnsafeIndex(archiveIndex);
+            return containingIndex.FindEncodingKey(encodingKey);
         }
     }
 }

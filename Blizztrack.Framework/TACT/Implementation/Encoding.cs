@@ -294,6 +294,18 @@ namespace Blizztrack.Framework.TACT.Implementation
                 FileSize = fileSize;
             }
 
+            public EncodingKey[] Keys
+            {
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                get
+                {
+                    var keys = new EncodingKey[Count];
+                    for (var i = 0; i < Count; ++i)
+                        keys[i] = _encodingKeys[i].AsKey<EncodingKey>();
+                    return keys;
+                }
+            }
+
             public EncodingKeyRef this[int index] => _encodingKeys[index].AsKey<EncodingKeyRef>();
             public EncodingKeyRef this[System.Index index] => this[index.GetOffset(Count)];
 
