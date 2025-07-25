@@ -1,4 +1,6 @@
-﻿using Blizztrack.Shared.IO;
+﻿using Blizztrack.Framework.TACT.Implementation;
+using Blizztrack.Framework.TACT.Resources;
+using Blizztrack.Shared.IO;
 
 using System.Diagnostics;
 
@@ -6,13 +8,19 @@ using static System.MemoryExtensions;
 
 namespace Blizztrack.Framework.TACT.Configuration
 {
-    public class ServerConfiguration(EncodingKey[] archives, SizeAware<EncodingKey> fileIndex, EncodingKey archiveGroup)
+    public class ServerConfiguration(EncodingKey[] archives, SizeAware<EncodingKey> fileIndex, EncodingKey archiveGroup) : IResourceParser<ServerConfiguration>
     {
         public readonly EncodingKey[] Archives = archives;
         public readonly SizeAware<EncodingKey> FileIndex = fileIndex;
         public readonly EncodingKey ArchiveGroup = archiveGroup;
 
-        public ServerConfiguration Parse<T>(T fileData)
+        public static ServerConfiguration OpenCompressedResource(ResourceHandle resourceHandle)
+            => Parse(resourceHandle.ToMappedDataSource());
+
+        public static ServerConfiguration OpenResource(ResourceHandle resourceHandle)
+            => Parse(resourceHandle.ToMappedDataSource());
+
+        public static ServerConfiguration Parse<T>(T fileData)
             where T : IDataSource
         {
             return ConfigurationFile.Parse(fileData, (properties, values, data) =>

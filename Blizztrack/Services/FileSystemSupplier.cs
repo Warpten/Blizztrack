@@ -6,8 +6,6 @@ using Blizztrack.Services.Caching;
 using Blizztrack.Shared.IO;
 
 using System.Runtime.CompilerServices;
-using System.Text;
-using System.Threading.Tasks;
 
 using Encoding = Blizztrack.Framework.TACT.Implementation.Encoding;
 using Index = Blizztrack.Framework.TACT.Implementation.Index;

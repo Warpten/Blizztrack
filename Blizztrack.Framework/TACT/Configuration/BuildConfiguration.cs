@@ -1,4 +1,6 @@
-﻿using Blizztrack.Shared.IO;
+﻿using Blizztrack.Framework.TACT.Implementation;
+using Blizztrack.Framework.TACT.Resources;
+using Blizztrack.Shared.IO;
 
 using System.Diagnostics;
 
@@ -6,7 +8,7 @@ using static System.MemoryExtensions;
 
 namespace Blizztrack.Framework.TACT.Configuration
 {
-    public class BuildConfiguration
+    public class BuildConfiguration : IResourceParser<BuildConfiguration>
     {
         public required string BuildName { get; init; }
 
@@ -25,6 +27,12 @@ namespace Blizztrack.Framework.TACT.Configuration
         /// the <see cref="ContentKey" /> in an instance of <see cref="Implementation.Encoding" />.
         /// </summary>
         public required SizedKeyPair<ContentKey, EncodingKey> Install { get; init; }
+
+        public static BuildConfiguration OpenCompressedResource(ResourceHandle resourceHandle)
+            => Parse(resourceHandle.ToMappedDataSource());
+
+        public static BuildConfiguration OpenResource(ResourceHandle resourceHandle)
+            => Parse(resourceHandle.ToMappedDataSource());
 
         public static BuildConfiguration Parse<T>(T fileData)
             where T : IDataSource
