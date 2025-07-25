@@ -65,8 +65,11 @@ namespace Blizztrack.Framework.TACT.Implementation
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
             {
-                var entryIndex = index % _entriesPerPage / _entrySize;
-                return _recordParser(_dataSource.Slice(entryIndex, _entrySize), _entrySchema.K, _entrySchema.O, _entrySchema.S, _keys.AsSpan());
+                var indexInPage = index % _entriesPerPage;
+                var pageIndex = index / _entriesPerPage;
+
+                var entryOffset = pageIndex * _pageSize + indexInPage * _entrySize;
+                return _recordParser(_dataSource.Slice(entryOffset, _entrySize), _entrySchema.K, _entrySchema.O, _entrySchema.S, _keys.AsSpan());
             }
         }
 

@@ -1,21 +1,22 @@
 ﻿using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace Blizztrack.Shared
 {
     public readonly ref struct StridedReadOnlySpan<T>(ReadOnlySpan<T> data, int stride)
     {
-        private readonly ReadOnlySpan<T> _data = data;
+        public readonly ReadOnlySpan<T> Data = data;
         private readonly int _stride = stride;
 
         public readonly int Count = data.Length / stride;
         public readonly ReadOnlySpan<T> this[int index]
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => _data.Slice(index * _stride, _stride);
+            get => Data.Slice(index * _stride, _stride);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool SequenceEqual(StridedReadOnlySpan<T> other) => _stride == other._stride && _data.SequenceEqual(other._data);
+        public bool SequenceEqual(StridedReadOnlySpan<T> other) => _stride == other._stride && Data.SequenceEqual(other.Data);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly Enumerator GetEnumerator() => new(this);
