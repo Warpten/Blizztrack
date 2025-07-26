@@ -261,6 +261,7 @@ namespace Blizztrack.Framework.TACT
         [MethodImpl(MethodImplOptions.AggressiveInlining), Pure]
         public static T? AsKeyString<T>(this ReadOnlySpan<byte> str) where T : notnull, IOwnedKey<T>
             => T.FromString(str);
+
         /// <summary>
         /// Converts the given hex ASCII string to an implementation of <see cref="IOwnedKey{T}"/>.
         /// </summary>

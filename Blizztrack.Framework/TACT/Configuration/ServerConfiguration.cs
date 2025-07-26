@@ -1,5 +1,6 @@
 ﻿using Blizztrack.Framework.TACT.Implementation;
 using Blizztrack.Framework.TACT.Resources;
+using Blizztrack.Shared.Extensions;
 using Blizztrack.Shared.IO;
 
 using System.Diagnostics;
@@ -34,8 +35,8 @@ namespace Blizztrack.Framework.TACT.Configuration
 
                 for (var i = 0; i < properties.Length; ++i)
                 {
-                    var property = data[properties[i]];
-                    var value = data[values[i]];
+                    var property = data.UnsafeIndex(properties[i]);
+                    var value = data.UnsafeIndex(values[i]);
 
                     if (property.SequenceEqual("archives"u8))
                         archives = value.AsKeyString<EncodingKey>((byte)' ');

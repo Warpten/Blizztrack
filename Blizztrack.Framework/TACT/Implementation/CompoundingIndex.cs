@@ -39,7 +39,7 @@ namespace Blizztrack.Framework.TACT.Implementation
 
         public int Count => _indices.Sum(i => i.Count);
 
-        public Entry FindEncodingKey<T>(T encodingKey) where T : notnull, IEncodingKey<T>, allows ref struct
+        public Entry FindEncodingKey<T>(in T encodingKey) where T : notnull, IEncodingKey<T>, allows ref struct
         {
             var archiveIndex = encodingKey[0];
             for (var i = 1; i < encodingKey.Length / 2 + 1; ++i)

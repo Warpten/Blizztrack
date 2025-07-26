@@ -77,7 +77,7 @@ namespace Blizztrack.Framework.TACT.Implementation
         /// <typeparam name="T">The concrete type of the content key.</typeparam>
         /// <param name="contentKey">The content key to look for.</param>
         /// <returns>A record. If the content key can't be found, returns <see langword="default"/>.</returns>
-        public Entry FindContentKey<K>(K contentKey) where K : IContentKey<K>, IKey, allows ref struct
+        public Entry FindContentKey<K>(in K contentKey) where K : IContentKey<K>, IKey, allows ref struct
         {
             var targetPage = _header.CEKey.ResolvePage(_dataSupplier, contentKey.AsSpan());
             while (targetPage.Length != 0)

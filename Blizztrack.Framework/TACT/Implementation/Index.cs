@@ -79,7 +79,7 @@ namespace Blizztrack.Framework.TACT.Implementation
             get => this[index.GetOffset(Count)];
         }
 
-        public unsafe IIndex.Entry FindEncodingKey<K>(K encodingKey) where K : notnull, IEncodingKey<K>, allows ref struct
+        public unsafe IIndex.Entry FindEncodingKey<K>(in K encodingKey) where K : notnull, IEncodingKey<K>, allows ref struct
         {
             var toc = _dataSource.Slice(_pageCount * _pageSize, _entrySchema.K * _pageCount)
                 .WithStride(_entrySchema.K);

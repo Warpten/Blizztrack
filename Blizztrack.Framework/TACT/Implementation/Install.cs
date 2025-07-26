@@ -84,18 +84,44 @@ namespace Blizztrack.Framework.TACT.Implementation
             Entries = entries;
         }
 
+        public ref readonly Entry FindContentKey<C>(in C contentKey) where C : IContentKey<C>, allows ref struct
+        {
+            for (var i = 0; i < Entries.Length; ++i)
+            {
+                ref var entry = ref Entries[i];
+                if (entry.ContentKey.SequenceEqual(contentKey))
+                    return ref entry;
+            }
+
+            return ref Unsafe.NullRef<Entry>();
+        }
+
+        public ref readonly Entry Find(string filePath)
+        {
+            for (var i = 0; i < Entries.Length; ++i)
+            {
+                ref var entry = ref Entries[i];
+                if (entry.Name == filePath)
+                    return ref entry;
+            }
+
+            return ref Unsafe.NullRef<Entry>();
+        }
+
         /// <summary>
         /// Provides an enumeration of all the tags that are applied on a particular entry.
         /// </summary>
         /// <param name="entry">A record for a file.</param>
         /// <returns></returns>
         /// <remarks>Results of this method cannot be trusted if the given <see cref="Entry" /> was not supplied by this <see cref="Install" /> object.</remarks>
-        public IEnumerable<Tag> EnumerateTags(Entry entry)
+        public IEnumerable<Tag> EnumerateTags(in Entry entry) => EnumerateTagsImpl(entry.Index);
+
+        private IEnumerable<Tag> EnumerateTagsImpl(int index)
         {
             for (var i = 0; i < Tags.Length; ++i)
             {
                 ref var tag = ref Tags.UnsafeIndex(i);
-                if (tag.Flags[entry.Index])
+                if (tag.Flags[index])
                     yield return tag;
             }
         }
@@ -145,26 +171,27 @@ namespace Blizztrack.Framework.TACT.Implementation
         public readonly struct Flags
         {
             private readonly byte[] _flags; // Bits, stored as integers.
-            private readonly int Length; // Length, in bits.
+            private readonly int _length; // Length, in bits.
 
             internal Flags(ReadOnlySpan<byte> flags)
             {
-                Length = flags.Length * 8;
+                _length = flags.Length;
                 _flags = flags.ToArray();
             }
+
+            public int Length => _length * 8;
 
             public readonly bool this[int index]
             {
                 get
                 {
-                    if (index >= Length || index < 0)
+                    var referenceIndex = index / 8;
+                    if (referenceIndex >= Length || index < 0)
                         throw new ArgumentOutOfRangeException(nameof(index));
 
                     // The bit layout actually is
                     // [   0-th byte   ] [      1-th byte      ]
                     //  7 6 5 4 3 2 1 0   15 14 13 12 11 10 9 8
-
-                    var referenceIndex = index / 8;
                     var referenceMask = _flags.UnsafeIndex(referenceIndex);
 
                     var targetMask = 1u << (7 - index % 8);

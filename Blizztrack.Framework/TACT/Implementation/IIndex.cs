@@ -44,7 +44,7 @@
         /// <typeparam name="T">A type that implements <see cref="IEncodingKey{T}"/>.</typeparam>
         /// <param name="encodingKey">The encoding key to search for.</param>
         /// <returns></returns>
-        public Entry FindEncodingKey<T>(T encodingKey)
+        public Entry FindEncodingKey<T>(in T encodingKey)
             where T : notnull, IEncodingKey<T>, allows ref struct;
 
         public Entry this[int index] { get; }

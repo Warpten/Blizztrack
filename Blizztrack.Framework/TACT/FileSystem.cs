@@ -15,10 +15,17 @@ namespace Blizztrack.Framework.TACT
     public interface IFileSystem
     {
         /// <summary>
+        /// Retrieves every resource descriptor that corresponds to a given file path.
+        /// </summary>
+        /// <param name="filePath">The path to the file.</param>
+        /// <returns>A collection of resource descriptors.</returns>
+        public ResourceDescriptor[] Open(string filePath);
+
+        /// <summary>
         /// Retrieves every resource descriptor that corresponds to a given file data ID.
         /// </summary>
         /// <param name="fileDataID">An unique identifier for the file to look for.</param>
-        /// <returns>A collection of resource descriptors that match the given identifier.</returns>
+        /// <returns>A collection of resource descriptors.</returns>
         public ResourceDescriptor[] OpenFDID(uint fileDataID);
 
         /// <summary>
@@ -27,7 +34,7 @@ namespace Blizztrack.Framework.TACT
         /// <typeparam name="K">The concrete type of content key used.</typeparam>
         /// <param name="contentKey">The content key to look for.</param>
         /// <returns>A collection of resource descriptors.</returns>
-        public ResourceDescriptor[] OpenContentKey<T>(T contentKey) where T : IContentKey<T>, allows ref struct;
+        public ResourceDescriptor[] OpenContentKey<T>(in T contentKey) where T : IContentKey<T>, allows ref struct;
 
         /// <summary>
         /// Retrieves a resource descriptor that corresponds to a given encoding key.
@@ -35,7 +42,7 @@ namespace Blizztrack.Framework.TACT
         /// <typeparam name="K">The concrete type of encoding key used.</typeparam>
         /// <param name="contentKey">The encoding key to look for.</param>
         /// <returns>A resource descriptor.</returns>
-        public ResourceDescriptor OpenEncodingKey<T>(T encodingKey) where T : IEncodingKey<T>, allows ref struct;
+        public ResourceDescriptor OpenEncodingKey<T>(in T encodingKey) where T : IEncodingKey<T>, allows ref struct;
     }
 
     internal readonly struct BaseFileSystem<AT, FT>(string product, AT archiveIndices, Encoding? encoding = default, Root? root = default, Install? install = default, FT? fileIndex = default)
@@ -49,6 +56,20 @@ namespace Blizztrack.Framework.TACT
         private readonly Root? _root = root;
         private readonly Install? _install = install;
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ResourceDescriptor[] Open(string filePath)
+        {
+            if (_install is not null)
+            {
+                ref readonly var installEntry = ref _install.Find(filePath);
+                if (!Unsafe.IsNullRef(in installEntry))
+                    return OpenContentKey(in installEntry.ContentKey);
+            }
+
+            return [];
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ResourceDescriptor[] OpenFDID(uint fileDataID)
         {
             if (_root == default)
@@ -62,7 +83,8 @@ namespace Blizztrack.Framework.TACT
             return OpenContentKey(rootResult.ContentKey.AsReadOnlySpan().AsKey<ContentKeyRef>());
         }
 
-        public ResourceDescriptor[] OpenContentKey<K>(K contentKey) where K : IContentKey<K>, allows ref struct
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ResourceDescriptor[] OpenContentKey<K>(in K contentKey) where K : IContentKey<K>, allows ref struct
         {
             var encodingResult = _encoding == null ? default : _encoding.FindContentKey(contentKey);
 
@@ -73,12 +95,19 @@ namespace Blizztrack.Framework.TACT
             return results;
         }
 
-        public ResourceDescriptor OpenEncodingKey<K>(K encodingKey) where K : IEncodingKey<K>, allows ref struct
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ResourceDescriptor OpenEncodingKey<K>(in K encodingKey) where K : IEncodingKey<K>, allows ref struct
         {
             if (_fileIndex is not null)
             {
                 // Try non-archived files
-                var indexResult = _fileIndex.FindEncodingKey(encodingKey);
+                var indexResult = _fileIndex.FindEncodingKey(in encodingKey);
+                if (indexResult)
+                    return new ResourceDescriptor(ResourceType.Data, _product, indexResult.Archive.AsHexString(), indexResult.Offset, indexResult.Length);
+            }
+
+            {
+                var indexResult = _archives.FindEncodingKey(in encodingKey);
                 if (indexResult)
                     return new ResourceDescriptor(ResourceType.Data, _product, indexResult.Archive.AsHexString(), indexResult.Offset, indexResult.Length);
             }
@@ -102,16 +131,15 @@ namespace Blizztrack.Framework.TACT
     {
         private readonly BaseFileSystem<IIndex, IIndex> _implementation = new(product, archiveIndices, encoding, root, install, fileIndex);
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ResourceDescriptor[] Open(string filePath) => _implementation.Open(filePath);
+
         public ResourceDescriptor[] OpenFDID(uint fileDataID) => _implementation.OpenFDID(fileDataID);
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ResourceDescriptor[] OpenContentKey<K>(K contentKey) where K : IContentKey<K>, allows ref struct
-            => _implementation.OpenContentKey(contentKey);
+        public ResourceDescriptor[] OpenContentKey<K>(in K contentKey) where K : IContentKey<K>, allows ref struct
+            => _implementation.OpenContentKey(in contentKey);
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ResourceDescriptor OpenEncodingKey<K>(K encodingKey) where K : IEncodingKey<K>, allows ref struct
-            => _implementation.OpenEncodingKey(encodingKey);
+        public ResourceDescriptor OpenEncodingKey<K>(in K encodingKey) where K : IEncodingKey<K>, allows ref struct
+            => _implementation.OpenEncodingKey(in encodingKey);
     }
 
     /// <summary>
@@ -136,15 +164,15 @@ namespace Blizztrack.Framework.TACT
     {
         private readonly BaseFileSystem<ArchiveIndexT, FileIndexT> _implementation = new(product, archiveIndices, encoding, root, install, fileIndex);
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ResourceDescriptor[] OpenFDID(uint fileDataID) => _implementation.OpenFDID(fileDataID);
+        public ResourceDescriptor[] Open(string filePath) => _implementation.Open(filePath);
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ResourceDescriptor[] OpenContentKey<K>(K contentKey) where K : IContentKey<K>, allows ref struct
-            => _implementation.OpenContentKey(contentKey);
+        public ResourceDescriptor[] OpenFDID(uint fileDataID)
+            => _implementation.OpenFDID(fileDataID);
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ResourceDescriptor OpenEncodingKey<K>(K encodingKey) where K : IEncodingKey<K>, allows ref struct
-            => _implementation.OpenEncodingKey(encodingKey);
+        public ResourceDescriptor[] OpenContentKey<K>(in K contentKey) where K : IContentKey<K>, allows ref struct
+            => _implementation.OpenContentKey(in contentKey);
+
+        public ResourceDescriptor OpenEncodingKey<K>(in K encodingKey) where K : IEncodingKey<K>, allows ref struct
+            => _implementation.OpenEncodingKey(in encodingKey);
     }
 }
