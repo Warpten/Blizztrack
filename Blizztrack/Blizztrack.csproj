@@ -62,4 +62,8 @@
     <ProjectReference Include="..\Blizztrack.Framework\Blizztrack.Framework.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="API\Routing\" />
+  </ItemGroup>
+
 </Project>

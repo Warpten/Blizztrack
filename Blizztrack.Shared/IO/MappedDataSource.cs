@@ -18,9 +18,11 @@ namespace Blizztrack.Shared.IO
         /// <param name="filePath">A complete path to the file on disk.</param>
         /// <param name="offset">The offset at which to begin mapping data. A value of zero denotes the start of the file.</param>
         /// <param name="length">The amount of bytes to map. A value of zero will cause an amount of bytes ranging from <paramref name="offset"/> to roughly the end of the file to be mapped.</param>
+        /// <exception cref="UnauthorizedAccessException">Access to the memory-mapped file is unauthorized.</exception>
+        /// <exception cref="IOException">An I/O error occurred.</exception>
         public MappedDataSource(string filePath, long offset = 0, int length = 0)
         {
-            _memoryMappedFile = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, length, MemoryMappedFileAccess.Read);
+            _memoryMappedFile = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
             _accessor = _memoryMappedFile.CreateViewAccessor(offset, length);
 
             unsafe

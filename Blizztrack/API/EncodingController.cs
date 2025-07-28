@@ -59,6 +59,11 @@ namespace Blizztrack.API
             where E : IEncodingKey<E>, IKey<E>
             => encodingRepository.Obtain(product, encodingKey, stoppingToken);
 
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="EntryPages">The amount of entry pages.</param>
+        /// <param name="SpecificationPages">The amount of specification pages.</param>
         public record struct EncodingMetadata(int EntryPages, int SpecificationPages);
 
         public record struct EncodingEntry(string ContentKey, ulong FileSize, KeySpec[] Keys)
