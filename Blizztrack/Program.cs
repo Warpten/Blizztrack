@@ -1,5 +1,7 @@
 using Asp.Versioning;
+
 using Blizztrack.API;
+using Blizztrack.API.Bindings;
 using Blizztrack.API.Converters;
 using Blizztrack.Framework.TACT;
 using Blizztrack.Framework.TACT.Resources;
@@ -14,9 +16,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
+
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
+
 using System.Diagnostics;
 using System.Reflection;
 
@@ -137,6 +141,7 @@ namespace Blizztrack
             builder.Services.AddControllers().AddJsonOptions(o =>
             {
                 o.JsonSerializerOptions.Converters.Add(new KeyConverter<EncodingKey>());
+                o.JsonSerializerOptions.Converters.Add(new KeyConverter<ContentKey>());
             });
             builder.Services.AddProblemDetails();
             builder.Services.AddOpenApi();
@@ -144,6 +149,9 @@ namespace Blizztrack
             // TODO: Make this automatically happen
             builder.Services.AddOpenApiDocument(config =>
             {
+                config.SchemaSettings.TypeMappers.Add(new KeyBinder<EncodingKey>.Mapper());
+                config.SchemaSettings.TypeMappers.Add(new KeyBinder<ContentKey>.Mapper());
+
                 config.DocumentName = "v1";
                 config.ApiGroupNames = ["v1"];
 

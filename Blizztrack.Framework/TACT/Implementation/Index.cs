@@ -4,6 +4,7 @@ using Blizztrack.Shared.IO;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.Marshalling;
 
 namespace Blizztrack.Framework.TACT.Implementation
 {
