@@ -7,6 +7,14 @@ namespace Blizztrack.Framework.TACT.Resources
     public interface IResourceLocator
     {
         /// <summary>
+        /// Opens a stream to a resource.
+        /// </summary>
+        /// <param name="descriptor"></param>
+        /// <param name="stoppingToken"></param>
+        /// <returns></returns>
+        public Task<Stream> OpenStream(ResourceDescriptor descriptor, CancellationToken stoppingToken = default);
+
+        /// <summary>
         /// Opens a handle to a resource.
         /// </summary>
         /// <param name="resourceDescriptor"></param>
@@ -78,37 +86,37 @@ namespace Blizztrack.Framework.TACT.Resources
     public static class ResourceLocatorExtensions
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static Task<T> OpenCompressed<U, E, T>(this U self, string productCode, SizeAware<E> encodingKey, CancellationToken stoppingToken = default)
-            where U : IResourceLocator
+        public static Task<T> OpenCompressed<TLocator, E, T>(this TLocator self, string productCode, SizeAware<E> encodingKey, CancellationToken stoppingToken = default)
+            where TLocator : IResourceLocator
             where E : IEncodingKey<E>
             where T : class, IResourceParser<T>
             => self.OpenCompressed<E, T>(productCode, encodingKey.Key, stoppingToken);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static Task<ResourceHandle> OpenCompressedHandle<U, E, T>(this U self, string productCode, SizeAware<E> encodingKey, CancellationToken stoppingToken = default)
-            where U : IResourceLocator
+        public static Task<ResourceHandle> OpenCompressedHandle<TLocator, E, T>(this TLocator self, string productCode, SizeAware<E> encodingKey, CancellationToken stoppingToken = default)
+            where TLocator : IResourceLocator
             where E : IEncodingKey<E>
             => self.OpenCompressedHandle(productCode, encodingKey.Key, stoppingToken);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static Task<T> OpenCompressed<U, E, C, T>(this U self, string productCode, SizeAware<E> encodingKey, SizeAware<C> contentKey, CancellationToken stoppingToken = default)
-            where U : IResourceLocator
+        public static Task<T> OpenCompressed<TLocator, E, C, T>(this TLocator self, string productCode, SizeAware<E> encodingKey, SizeAware<C> contentKey, CancellationToken stoppingToken = default)
+            where TLocator : IResourceLocator
             where E : IEncodingKey<E>
             where C : IContentKey<C>
             where T : class, IResourceParser<T>
             => self.OpenCompressed<E, C, T>(productCode, encodingKey.Key, contentKey.Key, stoppingToken);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static Task<T> OpenCompressed<U, E, C, T>(this U self, string productCode, KeyPair<C, E> keys, CancellationToken stoppingToken = default)
-            where U : IResourceLocator
+        public static Task<T> OpenCompressed<TLocator, E, C, T>(this TLocator self, string productCode, KeyPair<C, E> keys, CancellationToken stoppingToken = default)
+            where TLocator : IResourceLocator
             where E : IEncodingKey<E>
             where C : IContentKey<C>
             where T : class, IResourceParser<T>
             => self.OpenCompressed<E, C, T>(productCode, keys.Encoding, keys.Content, stoppingToken);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static Task<T> OpenCompressed<U, E, C, T>(this U self, string productCode, SizedKeyPair<C, E> keys, CancellationToken stoppingToken = default)
-            where U : IResourceLocator
+        public static Task<T> OpenCompressed<TLocator, E, C, T>(this TLocator self, string productCode, SizedKeyPair<C, E> keys, CancellationToken stoppingToken = default)
+            where TLocator : IResourceLocator
             where E : IEncodingKey<E>
             where C : IContentKey<C>
             where T : class, IResourceParser<T>
@@ -119,21 +127,21 @@ namespace Blizztrack.Framework.TACT.Resources
             where U : IResourceLocator
             where E : IEncodingKey<E>
             where C : IContentKey<C>
-            => self.OpenCompressedHandle<E, C>(productCode, encodingKey.Key, contentKey.Key, stoppingToken);
+            => self.OpenCompressedHandle(productCode, encodingKey.Key, contentKey.Key, stoppingToken);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static Task<ResourceHandle> OpenCompressedHandle<U, E, C>(this U self, string productCode, KeyPair<C, E> keys, CancellationToken stoppingToken = default)
             where U : IResourceLocator
             where E : IEncodingKey<E>
             where C : IContentKey<C>
-            => self.OpenCompressedHandle<E, C>(productCode, keys.Encoding, keys.Content, stoppingToken);
+            => self.OpenCompressedHandle(productCode, keys.Encoding, keys.Content, stoppingToken);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static Task<ResourceHandle> OpenCompressedHandle<U, E, C>(this U self, string productCode, SizedKeyPair<C, E> keys, CancellationToken stoppingToken = default)
             where U : IResourceLocator
             where E : IEncodingKey<E>
             where C : IContentKey<C>
-            => self.OpenCompressedHandle<E, C>(productCode, keys.Encoding.Key, keys.Content.Key, stoppingToken);
+            => self.OpenCompressedHandle(productCode, keys.Encoding.Key, keys.Content.Key, stoppingToken);
     }
 
     public record struct PatchEndpoint(string Host, string DataStem, string ConfigurationStem);

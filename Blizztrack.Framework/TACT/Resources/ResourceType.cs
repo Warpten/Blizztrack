@@ -1,56 +1,68 @@
-﻿using System.Diagnostics.CodeAnalysis;
+﻿using Blizztrack.Framework.TACT.Implementation;
+using Blizztrack.Shared.IO;
+
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace Blizztrack.Framework.TACT.Resources
 {
     /// <summary>
     /// A resource type.
     /// </summary>
-    public readonly struct ResourceType
+    public readonly struct ResourceType : IEquatable<ResourceType>
     {
         private readonly int _index;
-
-        /// <summary>
-        /// The subdirectory, on Blizzard's CDNs, in which a resource with this type would live.
-        /// </summary>
-        public readonly string RemotePath;
-
-        /// <summary>
-        /// The subdirectory, on disk, in which a resource with this type would live.
-        /// </summary>
-        public readonly string LocalPath;
+        private readonly string _remotePath;
+        private readonly string _localPath;
 
         private ResourceType(int index, string remotePath, string localPath)
         {
             _index = index;
-            RemotePath = remotePath;
-            LocalPath = localPath;
+            _remotePath = remotePath;
+            _localPath = localPath;
         }
+
+        private ResourceType(int index, string path) : this(index, path, path) { }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal string FormatLocal<K>(K key) where K : IKey<K>, allows ref struct => Format(_localPath, key.AsHexString());
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal string FormatRemote<K>(K key) where K : IKey<K>, allows ref struct => Format(_remotePath, key.AsHexString());
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static string Format(string formatString, string archiveName)
+            => string.Format(formatString, archiveName[0..2], archiveName[2..4], archiveName);
+
 
         /// <summary>
         /// The resource is a configuration file.
         /// </summary>
-        public static readonly ResourceType Config = new(0, "config", "config");
+        public static readonly ResourceType Config = new(0, "config/{1}/{2}/{3}");
 
         /// <summary>
         /// The resource is an archive.
         /// </summary>
-        public static readonly ResourceType Data = new(1, "data", "data");
+        public static readonly ResourceType Data = new(1, "data/{1}/{2}/{3}");
 
         /// <summary>
         /// The resource is an archive index.
         /// </summary>
-        public static readonly ResourceType Indice = new(2, "data", "indices");
+        public static readonly ResourceType Indice = new(2, "data/{1}/{2}/{3}.index", "indices/{1}/{2}/{3}");
 
         /// <summary>
         /// Technically not a true resource type; this type denotes files that have been locally
         /// cached on disk after decompression.
         /// </summary>
-        public static readonly ResourceType Decompressed = new(3, "data", "decompressed");
+        public static readonly ResourceType Decompressed = new(3, "data/{1}/{2}/{3}", "decompressed/{1}/{2}/{3}");
 
         public static bool operator ==(ResourceType lhs, ResourceType rhs) => lhs._index == rhs._index;
         public static bool operator !=(ResourceType lhs, ResourceType rhs) => lhs._index != rhs._index;
 
-        public override bool Equals([NotNullWhen(true)] object? obj) => obj is ResourceType other && other._index == _index;
+        public override bool Equals([NotNullWhen(true)] object? obj) => obj is ResourceType other && Equals(other);
+        public bool Equals(ResourceType other) => other._index == _index;
         public override int GetHashCode() => _index;
     }
 }
