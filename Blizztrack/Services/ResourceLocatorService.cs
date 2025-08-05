@@ -97,8 +97,8 @@ namespace Blizztrack.Services
         {
             using var activity = BeginActivity("blizztrack.resources.open_compressed", productCode, encodingKey, contentKey);
 
-            var compressedDescriptor = ResourceDescriptor.Create(ResourceType.Data, productCode, encodingKey);
-            var decompressedDescriptor = ResourceDescriptor.Create(ResourceType.Decompressed, productCode, contentKey);
+            var compressedDescriptor = ResourceType.Data.ToDescriptor(productCode, encodingKey);
+            var decompressedDescriptor = ResourceType.Decompressed.ToDescriptor(productCode, contentKey);
             return OpenCompressedImpl<T>(compressedDescriptor, decompressedDescriptor, stoppingToken);
         }
 
@@ -108,8 +108,8 @@ namespace Blizztrack.Services
         {
             using var activity = BeginActivity("blizztrack.resources.open_compressed_handle", productCode, encodingKey, contentKey);
 
-            var compressedDescriptor = ResourceDescriptor.Create(ResourceType.Data, productCode, encodingKey);
-            var decompressedDescriptor = ResourceDescriptor.Create(ResourceType.Decompressed, productCode, contentKey);
+            var compressedDescriptor = ResourceType.Data.ToDescriptor(productCode, encodingKey);
+            var decompressedDescriptor = ResourceType.Decompressed.ToDescriptor(productCode, contentKey);
             return OpenCompressedHandleImpl(compressedDescriptor, decompressedDescriptor, stoppingToken);
         }
 
@@ -117,12 +117,12 @@ namespace Blizztrack.Services
         public Task<T> OpenCompressed<E, T>(string productCode, E encodingKey, CancellationToken stoppingToken)
             where E : IEncodingKey<E>, allows ref struct
             where T : class, IResourceParser<T>
-            => OpenCompressedImpl<T>(ResourceDescriptor.Create(ResourceType.Data, productCode, encodingKey), stoppingToken);
+            => OpenCompressedImpl<T>(ResourceType.Data.ToDescriptor(productCode, encodingKey), stoppingToken);
 
         // VALIDATED API
         public Task<ResourceHandle> OpenCompressedHandle<E>(string productCode, E encodingKey, CancellationToken stoppingToken)
             where E : IEncodingKey<E>, allows ref struct
-            => OpenCompressedHandle(ResourceDescriptor.Create(ResourceType.Data, productCode, encodingKey), stoppingToken);
+            => OpenCompressedHandle(ResourceType.Data.ToDescriptor(productCode, encodingKey), stoppingToken);
 
         public async Task<ResourceHandle> OpenCompressedHandle(ResourceDescriptor compressedDescriptor, CancellationToken stoppingToken)
         {
@@ -130,11 +130,11 @@ namespace Blizztrack.Services
             // If it's well known, creeate a file on disk if it doesn't exist, decompressed the resource
             // in it, and call the decompressed loader. Otherwise, call the compressed loader.
             var knownResource = _databaseContext.KnownResources
-                .SingleOrDefault(e => e.EncodingKey.SequenceEqual(compressedDescriptor.ArchiveName));
+                .SingleOrDefault(e => e.EncodingKey.SequenceEqual(compressedDescriptor.Archive));
 
             if (knownResource is not null)
             {
-                var decompressedDescriptor = ResourceDescriptor.Create(ResourceType.Decompressed, compressedDescriptor.Product, knownResource.ContentKey);
+                var decompressedDescriptor = ResourceType.Decompressed.ToDescriptor(compressedDescriptor.Product, knownResource.ContentKey);
 
                 return await OpenCompressedHandleImpl(compressedDescriptor, decompressedDescriptor, stoppingToken);
             }
@@ -168,11 +168,11 @@ namespace Blizztrack.Services
             // If it's well known, creeate a file on disk if it doesn't exist, decompressed the resource
             // in it, and call the decompressed loader. Otherwise, call the compressed loader.
             var knownResource = _databaseContext.KnownResources
-                .SingleOrDefault(e => e.EncodingKey.SequenceEqual(compressed.ArchiveName));
+                .SingleOrDefault(e => e.EncodingKey.SequenceEqual(compressed.Archive));
 
             if (knownResource is not null)
             {
-                var decompressed = ResourceDescriptor.Create(ResourceType.Decompressed, compressed.Product, knownResource.ContentKey);
+                var decompressed = ResourceType.Decompressed.ToDescriptor(compressed.Product, knownResource.ContentKey);
 
                 return await OpenCompressedImpl<T>(compressed, decompressed, stoppingToken);
             }

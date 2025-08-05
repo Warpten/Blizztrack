@@ -162,7 +162,7 @@ namespace Blizztrack.API
             if (Request.Method[0] == 'h') // Sue me
             {
                 Response.Headers["X-Blizztrack-FileDataID"] = fileDataID.ToString();
-                Response.Headers["X-Blizztrack-Archives"] = descriptors.Select(d => d.ArchiveName.AsHexString()).ToArray();
+                Response.Headers["X-Blizztrack-Archives"] = descriptors.Select(d => d.Archive.AsHexString()).ToArray();
                 Response.Headers["X-Blizztrack-Offsets"] = descriptors.Select(d => d.Offset.ToString()).ToArray();
                 Response.Headers["X-Blizztrack-Length"] = descriptors.Select(d => d.Length.ToString()).ToArray();
 
@@ -186,7 +186,7 @@ namespace Blizztrack.API
             if (Request.Method[0] == 'h') // Sue me
             {
                 Response.Headers["X-Blizztrack-EncodingKey"] = encodingKey.ToString();
-                Response.Headers["X-Blizztrack-Archive"] = descriptor.ArchiveName.AsHexString();
+                Response.Headers["X-Blizztrack-Archive"] = descriptor.Archive.AsHexString();
                 Response.Headers["X-Blizztrack-Offset"] = descriptor.Offset.ToString();
                 Response.Headers["X-Blizztrack-Length"] = descriptor.Length.ToString();
 
@@ -209,7 +209,7 @@ namespace Blizztrack.API
             if (Request.Method[0] == 'h') // Sue me
             {
                 Response.Headers["X-Blizztrack-ContentKey"] = contentKey.AsHexString();
-                Response.Headers["X-Blizztrack-Archives"] = descriptors.Select(d => d.ArchiveName.AsHexString()).ToArray();
+                Response.Headers["X-Blizztrack-Archives"] = descriptors.Select(d => d.Archive.AsHexString()).ToArray();
                 Response.Headers["X-Blizztrack-Offsets"] = descriptors.Select(d => d.Offset.ToString()).ToArray();
                 Response.Headers["X-Blizztrack-Length"] = descriptors.Select(d => d.Length.ToString()).ToArray();
 
@@ -246,7 +246,7 @@ namespace Blizztrack.API
         private async Task<T> OpenConfig<T>(string productCode, EncodingKey encodingKey, CancellationToken stoppingToken)
             where T : class, IResourceParser<T>
         {
-            var descriptor = new ResourceDescriptor(ResourceType.Config, productCode, encodingKey);
+            var descriptor = ResourceType.Config.ToDescriptor(productCode, encodingKey);
             var resourceHandle = await resourceLocator.OpenHandle(descriptor, stoppingToken);
 
             return T.OpenResource(resourceHandle);

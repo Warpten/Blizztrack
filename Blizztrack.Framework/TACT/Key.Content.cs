@@ -51,7 +51,7 @@ namespace Blizztrack.Framework.TACT
     }
 
     [DebuggerDisplay("{DebuggerDisplay,nq}")]
-    public readonly struct ContentKey(byte[] data) : IOwnedKey<ContentKey>, IContentKey<ContentKey>
+    public readonly struct ContentKey(byte[] data) : IOwnedKey<ContentKey, ContentKeyRef>, IContentKey<ContentKey>
     {
         private readonly byte[] _data = data;
         public byte this[int offset] => _data[offset];
@@ -80,6 +80,8 @@ namespace Blizztrack.Framework.TACT
         }
 
         public bool Equals(ContentKey other) => other._data.SequenceEqual(_data);
+
+        public ContentKeyRef AsRef() => new(_data);
 
         public string DebuggerDisplay => AsHexString();
     }

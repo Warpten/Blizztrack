@@ -53,7 +53,7 @@ namespace Blizztrack.Framework.TACT
     }
 
     [DebuggerDisplay("{DebuggerDisplay,nq}")]
-    public readonly struct EncodingKey(byte[] data) : IOwnedKey<EncodingKey>, IEncodingKey<EncodingKey>
+    public readonly struct EncodingKey(byte[] data) : IOwnedKey<EncodingKey, EncodingKeyRef>, IEncodingKey<EncodingKey>
     {
         private readonly byte[] _data = data;
         public byte this[int offset] => _data[offset];
@@ -82,6 +82,8 @@ namespace Blizztrack.Framework.TACT
         }
 
         public bool Equals(EncodingKey other) => other._data.SequenceEqual(_data);
+
+        public EncodingKeyRef AsRef() => new(_data);
 
         public string DebuggerDisplay => AsHexString();
     }

@@ -103,17 +103,17 @@ namespace Blizztrack.Framework.TACT
                 // Try non-archived files
                 var indexResult = _fileIndex.FindEncodingKey(in encodingKey);
                 if (indexResult)
-                    return new ResourceDescriptor(ResourceType.Data, _product, indexResult.Archive, indexResult.Offset, indexResult.Length);
+                    return ResourceType.Data.ToDescriptor(_product, indexResult.Archive, indexResult.Offset, indexResult.Length);
             }
 
             {
                 var indexResult = _archives.FindEncodingKey(in encodingKey);
                 if (indexResult)
-                    return new ResourceDescriptor(ResourceType.Data, _product, indexResult.Archive, indexResult.Offset, indexResult.Length);
+                    return ResourceType.Data.ToDescriptor(_product, indexResult.Archive, indexResult.Offset, indexResult.Length);
             }
 
             // Assume the file is a self-contained archive
-            return ResourceDescriptor.Create(ResourceType.Data, _product, encodingKey);
+            return ResourceType.Data.ToDescriptor(_product, encodingKey);
         }
     }
 

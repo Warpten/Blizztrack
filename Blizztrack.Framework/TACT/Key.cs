@@ -250,6 +250,15 @@ namespace Blizztrack.Framework.TACT
         }
     }
 
+    public interface IOwnedKey<T, U> : IOwnedKey<T>
+        where T : notnull, IOwnedKey<T, U>
+        where U : IKey<U>, allows ref struct
+    {
+        public U AsRef();
+
+        public static virtual implicit operator U(T self) => self.AsRef();
+    }
+
     public static class KeyExtensions
     {
         /// <summary>

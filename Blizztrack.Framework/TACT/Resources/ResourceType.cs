@@ -36,6 +36,9 @@ namespace Blizztrack.Framework.TACT.Resources
         private static string Format(string formatString, string archiveName)
             => string.Format(formatString, archiveName[0..2], archiveName[2..4], archiveName);
 
+        public ResourceDescriptor ToDescriptor<K>(string productCode, K key, long offset = 0, long length = 0)
+            where K : IKey<K>, allows ref struct
+            => new (this, productCode, key.AsSpan(), offset, length);
 
         /// <summary>
         /// The resource is a configuration file.

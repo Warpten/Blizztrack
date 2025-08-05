@@ -23,7 +23,7 @@ namespace Blizztrack.Services.Hosted
                     .Distinct()
                     .Select(async buildConfig =>
                     {
-                        var resourceDescriptor = new ResourceDescriptor(ResourceType.Config, product, buildConfig);
+                        var resourceDescriptor = ResourceType.Config.ToDescriptor(product, buildConfig);
                         var configurationFile = await _resourceLocator.OpenHandle(resourceDescriptor, stoppingToken);
 
                         using var mappedData = configurationFile.ToMappedDataSource();
