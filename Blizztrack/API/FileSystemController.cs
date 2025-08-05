@@ -6,19 +6,13 @@ using Blizztrack.Framework.TACT.Configuration;
 using Blizztrack.Framework.TACT.Implementation;
 using Blizztrack.Framework.TACT.Resources;
 using Blizztrack.Persistence;
-using Blizztrack.Persistence.Translators;
 using Blizztrack.Services;
 
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Mvc.ModelBinding;
-
-using NJsonSchema;
-using NJsonSchema.Generation.TypeMappers;
 
 using NSwag.Annotations;
 
 using System.ComponentModel;
-
 
 namespace Blizztrack.API
 {
@@ -29,89 +23,208 @@ namespace Blizztrack.API
     {
         #region p/{productCode}/b/{buildConfiguration}/s/{serverConfiguration}/...
         [HttpGet("p/{productCode}/b/{buildConfiguration}/s/{serverConfiguration}/fdid/{fileDataID:uint}/get")]
-        [OpenApiOperation("Extracts a file from a file system configuration.", "Streams back the decompressed file to the REST client.")]
-        public Task<IResult> OpenFileDataID(
+        [HttpHead("p/{productCode}/b/{buildConfiguration}/s/{serverConfiguration}/fdid/{fileDataID:uint}/get")]
+        [OpenApiOperation("Extracts a file from a file system configuration.", """
+            Streams back the decompressed file to the REST client.
+
+            If a HEAD request is issued, this endpoint instead returns a list of metadata for the resource
+            as part of the response headers.
+            """)]
+        public async Task<IResult> OpenFileDataID(
             [Description("The product code.")] string productCode,
             [Description("The build configuration hash.")] BoundEncodingKey buildConfiguration,
             [Description("The CDN configuration hash.")] BoundEncodingKey serverConfiguration,
             [Description("An unique identifier for the file to obtain.")] uint fileDataID,
             CancellationToken stoppingToken)
-            => WithFileSystem(ResolveFileSystem(productCode, buildConfiguration, serverConfiguration, stoppingToken),
-                OpenFileDataID, fileDataID);
+        {
+            var fs = await ResolveFileSystem(productCode, buildConfiguration, serverConfiguration, stoppingToken);
+            if (fs is null)
+                return TypedResults.NotFound();
+
+            return await OpenFileDataID(fs, fileDataID, stoppingToken);
+        }
 
         [HttpGet("p/{productCode}/b/{buildConfiguration}/s/{serverConfiguration}/ek/{encodingKey}/get")]
-        [OpenApiOperation("Extracts a file from a file system configuration.", "Streams back the decompressed file to the REST client.")]
-        public Task<IResult> OpenFileDataID(
+        [HttpHead("p/{productCode}/b/{buildConfiguration}/s/{serverConfiguration}/ek/{encodingKey}/get")]
+        [OpenApiOperation("Extracts a file from a file system configuration.", """
+            Streams back the decompressed file to the REST client.
+
+            If a HEAD request is issued, this endpoint instead returns a list of metadata for the resource
+            as part of the response headers.
+            """)]
+            
+        public async Task<IResult> OpenFileDataID(
             [Description("The product code.")] string productCode,
             [Description("The build configuration hash.")] BoundEncodingKey buildConfiguration,
             [Description("The CDN configuration hash.")] BoundEncodingKey serverConfiguration,
             [Description("An encoding key for the file.")] BoundEncodingKey encodingKey,
             CancellationToken stoppingToken)
-            => WithFileSystem<EncodingKey, IResult>(ResolveFileSystem(productCode, buildConfiguration, serverConfiguration, stoppingToken),
-                OpenEncodingKey, encodingKey);
+        {
+            var fs = await ResolveFileSystem(productCode, buildConfiguration, serverConfiguration, stoppingToken);
+            if (fs is null)
+                return TypedResults.NotFound();
+
+            return await OpenEncodingKey(fs, encodingKey, stoppingToken);
+        }
 
         [HttpGet("p/{productCode}/b/{buildConfiguration}/s/{serverConfiguration}/ck/{contentKey}/get")]
-        [OpenApiOperation("Extracts a file from a file system configuration.", "Streams back the decompressed file to the REST client.")]
-        public Task<IResult> OpenContentKey(
+        [HttpHead("p/{productCode}/b/{buildConfiguration}/s/{serverConfiguration}/ck/{contentKey}/get")]
+        [OpenApiOperation("Extracts a file from a file system configuration.", """
+            Streams back the decompressed file to the REST client.
+
+            If a HEAD request is issued, this endpoint instead returns a list of metadata for the resource
+            as part of the response headers.
+            """)]
+        public async Task<IResult> OpenContentKey(
             [Description("The product code.")] string productCode,
             [Description("The build configuration hash.")] BoundEncodingKey buildConfiguration,
             [Description("The CDN configuration hash.")] BoundEncodingKey serverConfiguration,
             [Description("A content key for the file.")] BoundContentKey contentKey,
             CancellationToken stoppingToken)
-            => WithFileSystem<ContentKey, IResult>(ResolveFileSystem(productCode, buildConfiguration, serverConfiguration, stoppingToken),
-                OpenContentKey, contentKey);
+        {
+            var fs = await ResolveFileSystem(productCode, buildConfiguration, serverConfiguration, stoppingToken);
+            if (fs is null)
+                return TypedResults.NotFound();
+
+            return await OpenContentKey(fs, contentKey, stoppingToken);
+        }
 
         #endregion
 
         #region c/{configurationName}/...
         [HttpGet("c/{configurationName}/fdid/{fileDataID:uint}/get")]
-        [OpenApiOperation("Extracts a file from a file system configuration.", "Streams back the decompressed file to the REST client.")]
-        public Task<IResult> OpenFileDataID(
+        [HttpHead("c/{configurationName}/fdid/{fileDataID:uint}/get")]
+        [OpenApiOperation("Extracts a file from a file system configuration.", """
+            Streams back the decompressed file to the REST client.
+
+            If a HEAD request is issued, this endpoint instead returns a list of metadata for the resource
+            as part of the response headers.
+            """)]
+        public async Task<IResult> OpenFileDataID(
             [Description("The name of the build configuration.")] string configurationName,
             [Description("An unique identifier for the file to obtain.")] uint fileDataID,
             CancellationToken stoppingToken)
-            => WithFileSystem(ResolveFileSystem(configurationName, stoppingToken),
-                OpenFileDataID, fileDataID);
+        {
+            var fs = await ResolveFileSystem(configurationName, stoppingToken);
+            if (fs is null)
+                return TypedResults.NotFound();
+
+            return await OpenFileDataID(fs, fileDataID, stoppingToken);
+        }
 
         [HttpGet("c/{configurationName}/ek/{encodingKey}/get")]
-        [OpenApiOperation("Extracts a file from a file system configuration.", "Streams back the decompressed file to the REST client.")]
-        public Task<IResult> OpenEncodingKey(
+        [HttpHead("c/{configurationName}/ek/{encodingKey}/get")]
+        [OpenApiOperation("Extracts a file from a file system configuration.", """
+            Streams back the decompressed file to the REST client.
+
+            If a HEAD request is issued, this endpoint instead returns a list of metadata for the resource
+            as part of the response headers.
+            """)]
+        public async Task<IResult> OpenEncodingKey(
             [Description("The name of the build configuration.")] string configurationName,
             [Description("An encoding key for the file.")] BoundEncodingKey encodingKey,
             CancellationToken stoppingToken)
-            => WithFileSystem<EncodingKey, IResult>(ResolveFileSystem(configurationName, stoppingToken),
-                OpenEncodingKey, encodingKey);
+        {
+            var fs = await ResolveFileSystem(configurationName, stoppingToken);
+            if (fs is null)
+                return TypedResults.NotFound();
+
+            return await OpenEncodingKey(fs, encodingKey, stoppingToken);
+        }
 
         [HttpGet("c/{configurationName}/ck/{contentKey}/get")]
-        [OpenApiOperation("Extracts a file from a file system configuration.", "Streams back the decompressed file to the REST client.")]
-        public Task<IResult> OpenContentKey(
+        [HttpHead("c/{configurationName}/ck/{contentKey}/get")]
+        [OpenApiOperation("Extracts a file from a file system configuration.", """
+            Streams back the decompressed file to the REST client.
+
+            If a HEAD request is issued, this endpoint instead returns a list of metadata for the resource
+            as part of the response headers.
+            """)]
+        public async Task<IResult> OpenContentKey(
             [Description("The name of the build configuration.")] string configurationName,
             [Description("A content key for the file.")] BoundContentKey contentKey,
             CancellationToken stoppingToken)
-            => WithFileSystem<ContentKey, IResult>(ResolveFileSystem(configurationName, stoppingToken),
-                OpenContentKey, contentKey);
+        {
+            var fs = await ResolveFileSystem(configurationName, stoppingToken);
+            if (fs is null)
+                return TypedResults.NotFound();
+
+            return await OpenContentKey(fs, contentKey, stoppingToken);
+        }
         #endregion
 
-        private IResult OpenFileDataID(IFileSystem fileSystem, uint fileDataID)
+        private async Task<IResult> OpenFileDataID(IFileSystem fileSystem, uint fileDataID, CancellationToken stoppingToken)
         {
             var descriptors = fileSystem.OpenFDID(fileDataID);
-            return TypedResults.Ok(descriptors);
+            if (descriptors.Length == 0)
+                return TypedResults.NotFound();
+
+            if (Request.Method[0] == 'h') // Sue me
+            {
+                Response.Headers["X-Blizztrack-FileDataID"] = fileDataID.ToString();
+                Response.Headers["X-Blizztrack-Archives"] = descriptors.Select(d => d.ArchiveName.AsHexString()).ToArray();
+                Response.Headers["X-Blizztrack-Offsets"] = descriptors.Select(d => d.Offset.ToString()).ToArray();
+                Response.Headers["X-Blizztrack-Length"] = descriptors.Select(d => d.Length.ToString()).ToArray();
+
+                return TypedResults.Ok();
+            }
+
+            foreach (var descriptor in descriptors)
+            {
+                var dataStream = await resourceLocator.OpenStream(descriptor, stoppingToken);
+                if (dataStream != Stream.Null)
+                    return TypedResults.Ok(dataStream);
+            }
+
+            return TypedResults.NotFound();
         }
 
-        private IResult OpenEncodingKey(IFileSystem fileSystem, EncodingKey encodingKey)
+        private async Task<IResult> OpenEncodingKey(IFileSystem fileSystem, EncodingKey encodingKey, CancellationToken stoppingToken)
         {
             var descriptor = fileSystem.OpenEncodingKey(encodingKey);
-            return TypedResults.Ok(descriptor);
+
+            if (Request.Method[0] == 'h') // Sue me
+            {
+                Response.Headers["X-Blizztrack-EncodingKey"] = encodingKey.ToString();
+                Response.Headers["X-Blizztrack-Archive"] = descriptor.ArchiveName.AsHexString();
+                Response.Headers["X-Blizztrack-Offset"] = descriptor.Offset.ToString();
+                Response.Headers["X-Blizztrack-Length"] = descriptor.Length.ToString();
+
+                return TypedResults.Ok();
+            }
+
+            var dataStream = await resourceLocator.OpenStream(descriptor, stoppingToken);
+            if (dataStream != Stream.Null)
+                return TypedResults.Ok(dataStream);
+
+            return TypedResults.NotFound();
         }
 
-        private IResult OpenContentKey(IFileSystem fileSystem, ContentKey contentKey)
+        private async Task<IResult> OpenContentKey(IFileSystem fileSystem, ContentKey contentKey, CancellationToken stoppingToken)
         {
             var descriptors = fileSystem.OpenContentKey(contentKey);
-            return TypedResults.Ok(descriptors);
-        }
+            if (descriptors.Length == 0)
+                return TypedResults.NotFound();
 
-        private static Task<T> WithFileSystem<U, T>(Task<IFileSystem> fileSystem, Func<IFileSystem, U, T> handler, U queryParameter)
-            => fileSystem.ContinueWith(task => handler(task.Result, queryParameter));
+            if (Request.Method[0] == 'h') // Sue me
+            {
+                Response.Headers["X-Blizztrack-ContentKey"] = contentKey.AsHexString();
+                Response.Headers["X-Blizztrack-Archives"] = descriptors.Select(d => d.ArchiveName.AsHexString()).ToArray();
+                Response.Headers["X-Blizztrack-Offsets"] = descriptors.Select(d => d.Offset.ToString()).ToArray();
+                Response.Headers["X-Blizztrack-Length"] = descriptors.Select(d => d.Length.ToString()).ToArray();
+
+                return TypedResults.Ok();
+            }
+
+            foreach (var descriptor in descriptors)
+            {
+                var dataStream = await resourceLocator.OpenStream(descriptor, stoppingToken);
+                if (dataStream != Stream.Null)
+                    return TypedResults.Ok(dataStream);
+            }
+
+            return TypedResults.NotFound();
+        }
 
         private async Task<IFileSystem> ResolveFileSystem(string configurationName, CancellationToken stoppingToken)
         {
@@ -133,7 +246,7 @@ namespace Blizztrack.API
         private async Task<T> OpenConfig<T>(string productCode, EncodingKey encodingKey, CancellationToken stoppingToken)
             where T : class, IResourceParser<T>
         {
-            var descriptor = new ResourceDescriptor(ResourceType.Config, productCode, encodingKey.AsHexString());
+            var descriptor = new ResourceDescriptor(ResourceType.Config, productCode, encodingKey);
             var resourceHandle = await resourceLocator.OpenHandle(descriptor, stoppingToken);
 
             return T.OpenResource(resourceHandle);

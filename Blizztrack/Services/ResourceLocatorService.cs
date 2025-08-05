@@ -6,6 +6,7 @@ using Blizztrack.Persistence;
 using Blizztrack.Services.Caching;
 
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Query.Internal;
 using Microsoft.Extensions.Options;
 
 using Polly;
@@ -59,7 +60,6 @@ namespace Blizztrack.Services
             return activity;
         }
 
-
         public ResourceLocatorService(IHttpClientFactory clientFactory, IServiceProvider serviceProvider)
         {
             _clientFactory = clientFactory;
@@ -70,7 +70,6 @@ namespace Blizztrack.Services
             _databaseContext = scope.ServiceProvider.GetRequiredService<DatabaseContext>();
         }
 
-        // VALIDATED API
         public async Task<ResourceHandle> OpenHandle(ResourceDescriptor resourceDescriptor, CancellationToken stoppingToken)
         {
             var localHandle = _localCache.OpenHandle(resourceDescriptor);
@@ -91,7 +90,6 @@ namespace Blizztrack.Services
             return _localCache.OpenHandle(resourceDescriptor);
         }
 
-        // VALIDATED API
         public Task<T> OpenCompressed<E, C, T>(string productCode, E encodingKey, C contentKey, CancellationToken stoppingToken)
             where E : IEncodingKey<E>, allows ref struct
             where C : IContentKey<C>, allows ref struct
@@ -99,8 +97,8 @@ namespace Blizztrack.Services
         {
             using var activity = BeginActivity("blizztrack.resources.open_compressed", productCode, encodingKey, contentKey);
 
-            var compressedDescriptor = new ResourceDescriptor(ResourceType.Data, productCode, encodingKey.AsHexString());
-            var decompressedDescriptor = new ResourceDescriptor(ResourceType.Decompressed, productCode, contentKey.AsHexString());
+            var compressedDescriptor = ResourceDescriptor.Create(ResourceType.Data, productCode, encodingKey);
+            var decompressedDescriptor = ResourceDescriptor.Create(ResourceType.Decompressed, productCode, contentKey);
             return OpenCompressedImpl<T>(compressedDescriptor, decompressedDescriptor, stoppingToken);
         }
 
@@ -110,8 +108,8 @@ namespace Blizztrack.Services
         {
             using var activity = BeginActivity("blizztrack.resources.open_compressed_handle", productCode, encodingKey, contentKey);
 
-            var compressedDescriptor = new ResourceDescriptor(ResourceType.Data, productCode, encodingKey.AsHexString());
-            var decompressedDescriptor = new ResourceDescriptor(ResourceType.Decompressed, productCode, contentKey.AsHexString());
+            var compressedDescriptor = ResourceDescriptor.Create(ResourceType.Data, productCode, encodingKey);
+            var decompressedDescriptor = ResourceDescriptor.Create(ResourceType.Decompressed, productCode, contentKey);
             return OpenCompressedHandleImpl(compressedDescriptor, decompressedDescriptor, stoppingToken);
         }
 
@@ -119,12 +117,12 @@ namespace Blizztrack.Services
         public Task<T> OpenCompressed<E, T>(string productCode, E encodingKey, CancellationToken stoppingToken)
             where E : IEncodingKey<E>, allows ref struct
             where T : class, IResourceParser<T>
-            => OpenCompressedImpl<T>(new ResourceDescriptor(ResourceType.Data, productCode, encodingKey.AsHexString()), stoppingToken);
+            => OpenCompressedImpl<T>(ResourceDescriptor.Create(ResourceType.Data, productCode, encodingKey), stoppingToken);
 
         // VALIDATED API
         public Task<ResourceHandle> OpenCompressedHandle<E>(string productCode, E encodingKey, CancellationToken stoppingToken)
             where E : IEncodingKey<E>, allows ref struct
-            => OpenCompressedHandle(new ResourceDescriptor(ResourceType.Data, productCode, encodingKey.AsHexString()), stoppingToken);
+            => OpenCompressedHandle(ResourceDescriptor.Create(ResourceType.Data, productCode, encodingKey), stoppingToken);
 
         public async Task<ResourceHandle> OpenCompressedHandle(ResourceDescriptor compressedDescriptor, CancellationToken stoppingToken)
         {
@@ -132,11 +130,11 @@ namespace Blizztrack.Services
             // If it's well known, creeate a file on disk if it doesn't exist, decompressed the resource
             // in it, and call the decompressed loader. Otherwise, call the compressed loader.
             var knownResource = _databaseContext.KnownResources
-                .SingleOrDefault(e => e.EncodingKey.AsHexString() == compressedDescriptor.ArchiveName);
+                .SingleOrDefault(e => e.EncodingKey.SequenceEqual(compressedDescriptor.ArchiveName));
 
             if (knownResource is not null)
             {
-                var decompressedDescriptor = new ResourceDescriptor(ResourceType.Decompressed, compressedDescriptor.Product, knownResource.ContentKey.AsHexString());
+                var decompressedDescriptor = ResourceDescriptor.Create(ResourceType.Decompressed, compressedDescriptor.Product, knownResource.ContentKey);
 
                 return await OpenCompressedHandleImpl(compressedDescriptor, decompressedDescriptor, stoppingToken);
             }
@@ -148,14 +146,14 @@ namespace Blizztrack.Services
         }
 
         // VALIDATED IMPLEMENTATION DETAIL
-        private async Task<ResourceHandle> OpenCompressedHandleImpl(ResourceDescriptor compressedDescriptor, ResourceDescriptor decompressedDescriptor, CancellationToken stoppingToken)
+        private async Task<ResourceHandle> OpenCompressedHandleImpl(ResourceDescriptor compressed, ResourceDescriptor decompressed, CancellationToken stoppingToken)
         {
-            var decompressedHandle = _localCache.OpenHandle(decompressedDescriptor);
+            var decompressedHandle = _localCache.OpenHandle(decompressed);
             if (decompressedHandle != default)
                 return decompressedHandle;
 
             // Create the decompressed resource now.
-            var compressedHandle = await OpenHandle(compressedDescriptor, stoppingToken);
+            var compressedHandle = await OpenHandle(compressed, stoppingToken);
             var decompressedData = BLTE.Parse(compressedHandle);
 
             decompressedHandle.Create(decompressedData);
@@ -163,43 +161,43 @@ namespace Blizztrack.Services
         }
 
         // VALIDATED IMPLEMENTATION DETAIL
-        private async Task<T> OpenCompressedImpl<T>(ResourceDescriptor compressedDescriptor, CancellationToken stoppingToken)
+        private async Task<T> OpenCompressedImpl<T>(ResourceDescriptor compressed, CancellationToken stoppingToken)
             where T : class, IResourceParser<T>
         {
             // Look for this resource in the well known table.
             // If it's well known, creeate a file on disk if it doesn't exist, decompressed the resource
             // in it, and call the decompressed loader. Otherwise, call the compressed loader.
             var knownResource = _databaseContext.KnownResources
-                .SingleOrDefault(e => e.EncodingKey.AsHexString() == compressedDescriptor.ArchiveName);
+                .SingleOrDefault(e => e.EncodingKey.SequenceEqual(compressed.ArchiveName));
 
             if (knownResource is not null)
             {
-                var decompressedDescriptor = new ResourceDescriptor(ResourceType.Decompressed, compressedDescriptor.Product, knownResource.ContentKey.AsHexString());
+                var decompressed = ResourceDescriptor.Create(ResourceType.Decompressed, compressed.Product, knownResource.ContentKey);
 
-                return await OpenCompressedImpl<T>(compressedDescriptor, decompressedDescriptor, stoppingToken);
+                return await OpenCompressedImpl<T>(compressed, decompressed, stoppingToken);
             }
             else
             {
                 // Not a known resource... Just use the compressed handler.
-                var compressedHandle = await OpenHandle(compressedDescriptor, stoppingToken);
+                var compressedHandle = await OpenHandle(compressed, stoppingToken);
                 return T.OpenCompressedResource(compressedHandle);
             }
         }
 
         // VALIDATED IMPLEMENTATION DETAIL
-        private async Task<T> OpenCompressedImpl<T>(ResourceDescriptor compressedDescriptor, ResourceDescriptor decompressedDescriptor, CancellationToken stoppingToken)
+        private async Task<T> OpenCompressedImpl<T>(ResourceDescriptor compressed, ResourceDescriptor decompressed, CancellationToken stoppingToken)
             where T : class, IResourceParser<T>
         {
-            var decompressedHandle = _localCache.OpenHandle(decompressedDescriptor);
+            var decompressedHandle = _localCache.OpenHandle(decompressed);
             if (decompressedHandle != default)
                 return T.OpenResource(decompressedHandle);
 
             // Create the decompressed resource now.
-            var compressedHandle = await OpenHandle(compressedDescriptor, stoppingToken);
+            var compressedHandle = await OpenHandle(compressed, stoppingToken);
             var decompressedData = BLTE.Parse(compressedHandle);
 
-            _localCache.Write(decompressedDescriptor.LocalPath, decompressedData);
-            return T.OpenResource(_localCache.OpenHandle(decompressedDescriptor));
+            _localCache.Write(decompressed.LocalPath, decompressedData);
+            return T.OpenResource(_localCache.OpenHandle(decompressed));
         }
 
         private readonly ResiliencePipeline<ContentQueryResult> _acquisitionPipeline = new ResiliencePipelineBuilder<ContentQueryResult>()
@@ -285,6 +283,20 @@ namespace Blizztrack.Services
             }, resilienceContext, transferContext);
 
             return result.Result;
+        }
+
+        public async Task<Stream> OpenStream(ResourceDescriptor descriptor, CancellationToken stoppingToken = default)
+        {
+            var localHandle = _localCache.OpenHandle(descriptor);
+            if (localHandle.Exists)
+                return localHandle.ToStream();
+
+            var endpoints = GetEndpoints(descriptor.Product);
+            var backendQuery = await ExecuteQuery(endpoints, descriptor, stoppingToken);
+            if (backendQuery.StatusCode != HttpStatusCode.OK)
+                return Stream.Null;
+
+            return backendQuery.Body;
         }
     }
 }

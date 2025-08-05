@@ -41,7 +41,7 @@ namespace Blizztrack.Services
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static async Task<Index<MappedDataSource>> OpenIndex(string productCode, EncodingKey encodingKey, IResourceLocator locator, CancellationToken stoppingToken)
         {
-            var descriptor = new ResourceDescriptor(ResourceType.Indice, productCode, encodingKey.AsSpan());
+            var descriptor = new ResourceDescriptor(ResourceType.Indice, productCode, encodingKey);
             var handle = await locator.OpenHandle(descriptor, stoppingToken);
             // TODO: Pool this call.
             return Index.Open(handle.ToMappedDataSource(), encodingKey);
