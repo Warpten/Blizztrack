@@ -40,6 +40,13 @@ namespace Blizztrack.Framework.TACT.Implementation
     /// // Example of use of the single-step implementation
     /// ResourceHandle handle = ...;
     /// var decompressedBytes = BLTE.Parse(handle);
+    /// 
+    /// // You are also able to extract part of a file. In that situation, you must use the two-phase extraction logic:
+    /// ResourceHandle handle = ...;
+    /// var schema = BLTE.ParseSchema(handle);
+    /// // The ranges provided below are relative to the decompressed file.
+    /// var decompressedFragment = schema.Execute(handle, 0..1024); // Gets at most the first 1024 bytes of the file.
+    /// var decompressedFragment = schema.Execute(handle, 100..200); // Gets 100 bytes of the file starting at offset 100.
     /// </code>
     /// </example>
     public readonly struct BLTE

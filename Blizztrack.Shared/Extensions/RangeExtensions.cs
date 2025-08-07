@@ -17,6 +17,13 @@ namespace Blizztrack.Shared.Extensions
         public static Range Shift(this Range range, int offset)
             => new(range.Start.Value + offset, range.End.Value + offset);
 
+        /// <summary>
+        /// Computes the intersection of two ranges over a buffer of <paramref name="targetSize"/> elements.
+        /// </summary>
+        /// <param name="range"></param>
+        /// <param name="targetSize"></param>
+        /// <param name="otherRange"></param>
+        /// <returns></returns>
         public static Range Intersection(this Range range, int targetSize, Range otherRange)
         {
             var (start, length) = range.GetOffsetAndLength(targetSize);
