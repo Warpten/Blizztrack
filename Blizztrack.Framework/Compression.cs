@@ -132,7 +132,7 @@ namespace Blizztrack.Framework
             if (returnCode != Z_OK)
                 return false;
 
-            while (stream.AvailableIn != 0 && returnCode != Z_STREAM_END)
+            while (!stream.Input.IsEmpty && returnCode != Z_STREAM_END)
             {
                 returnCode = Deflate(ref stream, Z_NO_FLUSH);
                 if (returnCode < 0)
@@ -146,15 +146,39 @@ namespace Blizztrack.Framework
             return returnCode == Z_OK;
         }
 
-        public bool Decompress(ReadOnlySpan<byte> input, Span<byte> output, int windowBits = 15)
+        public bool Decompress(ReadOnlySpan<byte> input, Span<byte> output, int discardOutput = 0, int windowBits = 15)
         {
+            if (discardOutput == 0)
+                return Decompress(input, output, windowBits);
+
             Stream stream = new (input, output);
             var returnCode = InitializeInflate(ref stream, windowBits);
             
             if (returnCode != Z_OK)
                 return false;
 
-            while (stream.AvailableIn != 0 && returnCode != Z_STREAM_END)
+            if (discardOutput > 0)
+            {
+                // Start by discarding the front of the output
+                var discardBuffer = GC.AllocateUninitializedArray<byte>(2048);
+                var discardSpan = discardBuffer.AsSpan()[Math.Min(2048, discardOutput)..];
+
+                // Discard as many bytes as required.
+                while (discardOutput > 0 && returnCode != Z_STREAM_END)
+                {
+                    // Reset the output buffer
+                    stream.Output = discardSpan;
+
+                    // Process until done discarding this chunk, or if the input is empty
+                    while (!stream.Output.IsEmpty && returnCode != Z_STREAM_END)
+                        returnCode = Inflate(ref stream, Z_NO_FLUSH);
+
+                    discardOutput -= discardSpan.Length;
+                }
+            }
+
+            stream.Output = output;
+            while (!stream.Input.IsEmpty && returnCode != Z_STREAM_END)
             {
                 returnCode = Inflate(ref stream, Z_NO_FLUSH);
                 if (returnCode < 0)
@@ -171,12 +195,38 @@ namespace Blizztrack.Framework
         [StructLayout(LayoutKind.Sequential, Pack = 1)]
         private ref struct Stream(ReadOnlySpan<byte> input, Span<byte> output)
         {
-            private byte* NextIn = (byte*) Unsafe.AsPointer(ref MemoryMarshal.GetReference(input));
-            private byte* NextOut = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetReference(output));
-            private nint Msg;
-            private nint InternalState;
-            public uint AvailableIn = (uint) input.Length;
-            private uint AvailableOut = (uint) output.Length;
+            private byte* _nextIn = (byte*) Unsafe.AsPointer(ref MemoryMarshal.GetReference(input));
+            private byte* _nextOut = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetReference(output));
+            private nint _msg;
+            private nint _internalState;
+            private uint _availableIn = (uint) input.Length;
+            private uint _availableOut = (uint) output.Length;
+
+            public ReadOnlySpan<byte> Input
+            {
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                set
+                {
+                    _nextIn = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetReference(value));
+                    _availableIn = (uint)value.Length;
+                }
+
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                readonly get => new(_nextIn, (int)_availableIn);
+            }
+
+            public ReadOnlySpan<byte> Output
+            {
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                set
+                {
+                    _nextOut = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetReference(value));
+                    _availableOut = (uint)value.Length;
+                }
+
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                readonly get => new(_nextOut, (int)_availableOut);
+            }
         }
     }
 }

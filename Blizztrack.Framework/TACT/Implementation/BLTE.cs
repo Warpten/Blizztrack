@@ -79,10 +79,58 @@ namespace Blizztrack.Framework.TACT.Implementation
             for (var i = 0; i < _chunks.Length; ++i)
             {
                 ref var currentChunk = ref _chunks[i];
-                currentChunk.Parser(inputData[currentChunk.Compressed], dataBuffer.AsSpan()[currentChunk.Decompressed]);
+                // Parse the chunk, without discarding any byte.
+                currentChunk.Parser(inputData[currentChunk.Compressed], dataBuffer.AsSpan()[currentChunk.Decompressed], 0);
             }
 
             return dataBuffer;
+        }
+
+        /// <summary>
+        /// Extracts the <paramref name="dataRange"/> bytes out of the <paramref name="resourceHandle"/>.
+        /// </summary>
+        /// <param name="resourceHandle"></param>
+        /// <param name="dataRange">A range.</param>
+        /// <returns>An </returns>
+        public unsafe byte[] Execute(ResourceHandle resourceHandle, Range dataRange)
+        {
+            using var inputData = resourceHandle.ToMappedDataSource();
+            var fileSize = _chunks[^1].Decompressed.End.Value;
+
+            var (_, decompressedLength) = dataRange.GetOffsetAndLength(_chunks[^1].Decompressed.End.Value);
+            var dataBuffer = GC.AllocateUninitializedArray<byte>(decompressedLength);
+
+            for (var i = 0; i < _chunks.Length && decompressedLength != 0; ++i)
+            {
+                ref var currentChunk = ref _chunks[i];
+
+                // Compute how many bytes we need to read in this chunk.
+                var chunkRange = dataRange.Intersection(fileSize, currentChunk.Decompressed);
+                if (chunkRange.Equals(default)) // No overlap ?
+                    continue;
+
+                // Get the offset and length of data in this chunk.
+                var (offset, length) = chunkRange.GetOffsetAndLength(currentChunk.DecompressedSize);
+
+                // We read the whole input chunk because compressed chunks will need to discard.
+                // Flat chunks will just copy-paste the data around.
+                var input = inputData[currentChunk.Compressed];
+                var output = dataBuffer.AsSpan().Slice(offset, length);
+
+                currentChunk.Parser(input, output, offset);
+                // Update the remainder. It's faster to do this than re-calculating an intersection.
+                decompressedLength -= length;
+            }
+
+            return dataBuffer;
+        }
+
+        public Stream Execute(Stream inputStream)
+        {
+            if (inputStream == Stream.Null)
+                return inputStream;
+
+
         }
 
         /// <summary>
@@ -191,9 +239,11 @@ namespace Blizztrack.Framework.TACT.Implementation
             }
         }
 
-        private static void ParseImmediate(ReadOnlySpan<byte> input, Span<byte> output) => input.CopyTo(output);
+        private static void ParseImmediate(ReadOnlySpan<byte> input, Span<byte> output, int discardCount)
+            => input.Slice(discardCount, output.Length).CopyTo(output);
 
-        private static void ParseCompressed(ReadOnlySpan<byte> input, Span<byte> output) => Compression.Instance.Decompress(input, output);
+        private static void ParseCompressed(ReadOnlySpan<byte> input, Span<byte> output, int discardCount)
+            => Compression.Instance.Decompress(input, output, discardCount, windowBits: 15);
 
         private static unsafe (int, ChunkInfo[], EncodingKey) ParseHeader(ReadOnlySpan<byte> fileData, int compressedBase = 0, int decompressedBase = 0)
         {
@@ -270,15 +320,15 @@ namespace Blizztrack.Framework.TACT.Implementation
 
         [DebuggerDisplay("{DebuggerDisplay,nq}")]
         internal unsafe struct ChunkInfo(Range compressed, Range decompressed,
-            delegate*<ReadOnlySpan<byte>, Span<byte>, void> parser)
+            delegate*<ReadOnlySpan<byte>, Span<byte>, int, void> parser)
         {
             public readonly Range Compressed = compressed;
             public readonly Range Decompressed = decompressed;
 
-            public delegate*<ReadOnlySpan<byte>, Span<byte>, void> Parser = parser;
+            public delegate*<ReadOnlySpan<byte>, Span<byte>, int /* discardOutput */, void> Parser = parser;
 
-            public readonly long CompressedSize => Compressed.End.Value - Compressed.Start.Value;
-            public readonly long DecompressedSize => Decompressed.End.Value - Decompressed.Start.Value;
+            public readonly int CompressedSize => Compressed.End.Value - Compressed.Start.Value;
+            public readonly int DecompressedSize => Decompressed.End.Value - Decompressed.Start.Value;
 
             internal readonly string DebuggerDisplay => $"{Compressed} -> {Decompressed}";
         }

@@ -1,4 +1,7 @@
-﻿using System.Runtime.CompilerServices;
+﻿using System;
+using System.Numerics;
+using System.Runtime.CompilerServices;
+using System.Runtime.Intrinsics;
 
 namespace Blizztrack.Shared.Extensions
 {
@@ -13,6 +16,37 @@ namespace Blizztrack.Shared.Extensions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static Range Shift(this Range range, int offset)
             => new(range.Start.Value + offset, range.End.Value + offset);
+
+        /// <summary>
+        /// Computes the minimal intersecting range of this range and N other ranges over a buffer of <paramref name="targetSize"/> elements.
+        /// </summary>
+        /// <param name="range"></param>
+        /// <param name="targetSize"></param>
+        /// <param name="ranges"></param>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Range Intersection(this Range range, int targetSize, params ReadOnlySpan<Range> ranges)
+        {
+            if (ranges.Length == 0)
+                return range;
+
+            // TODO: Vectorize? Not ideal because this is an horizontal operation...
+            // Also, what's the point if N is less than a SIMD lane ...
+
+            var (start, length) = range.GetOffsetAndLength(targetSize);
+            var end = start + length;
+
+            foreach (var itr in ranges)
+            {
+                var (itrStart, itrLength) = itr.GetOffsetAndLength(targetSize);
+                var itrEnd = itrStart + itrLength;
+
+                start = Math.Max(start, itrStart);
+                end = Math.Min(end, itrEnd);
+            }
+
+            return new Range(start, end);
+        }
 
         /// <summary>
         /// Rebases this range to the start of the given range.
