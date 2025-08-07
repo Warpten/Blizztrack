@@ -97,7 +97,7 @@ namespace Blizztrack.Framework.TACT.Implementation
             using var inputData = resourceHandle.ToMappedDataSource();
             var fileSize = _chunks[^1].Decompressed.End.Value;
 
-            var (_, decompressedLength) = dataRange.GetOffsetAndLength(_chunks[^1].Decompressed.End.Value);
+            var (_, decompressedLength) = dataRange.GetOffsetAndLength(fileSize);
             var dataBuffer = GC.AllocateUninitializedArray<byte>(decompressedLength);
 
             for (var i = 0; i < _chunks.Length && decompressedLength != 0; ++i)
@@ -123,14 +123,6 @@ namespace Blizztrack.Framework.TACT.Implementation
             }
 
             return dataBuffer;
-        }
-
-        public Stream Execute(Stream inputStream)
-        {
-            if (inputStream == Stream.Null)
-                return inputStream;
-
-
         }
 
         /// <summary>
