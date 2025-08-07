@@ -15,14 +15,19 @@ namespace Blizztrack.Framework.TACT.Implementation
     /// This object describes a specific BLTE schema.
     /// 
     /// <para>
-    /// There are multiple ways to use this object; it can be used to create a schema that can later be used to parse a <see cref="ResourceHandle" />,
+    /// There are multiple ways to use this object; it can be used to create a schema
+    /// that can later be used to parse a <see cref="ResourceHandle" />,
     /// or can be used to directly extract the compressed bytes.
     /// </para>
     /// </summary>
-    /// <remarks>When using the two-steps implementation, it is primordial to make sure the same <see cref="ResourceHandle" /> is used both at
-    /// <see cref="ParseSchema(ResourceHandle, long)" >schema generation</see> time as well as <see cref="Execute(ResourceHandle)">extraction time</see>,
-    /// as instances of this object are effectively hardcoded to work for a specific schema. At the very least, make sure the compression schema is
-    /// identical if cross-using this object. You can rely on <see cref="Encoding.FindSpecification{T}(T)"/> for this.</remarks>
+    /// <remarks>When using the two-steps implementation, it is primordial to make sure
+    /// the same <see cref="ResourceHandle" /> is used both at 
+    /// <see cref="ParseSchema(ResourceHandle, long)" >schema generation</see> time as
+    /// well as <see cref="Execute(ResourceHandle)">extraction time</see>,
+    /// as instances of this object are effectively hardcoded to work for a specific
+    /// schema. At the very least, make sure the compression schema is identical if
+    /// cross-using this object. You can rely on
+    /// <see cref="Encoding.FindSpecification{T}(T)"/> for this.</remarks>
     /// <example>
     /// <code>
     /// // Example of use of the two-steps implementation.
@@ -35,7 +40,10 @@ namespace Blizztrack.Framework.TACT.Implementation
     /// ResourceHandle extractionHandle = ...;
     /// Debug.Assert(schemaHandle != extractionHandle);
     /// var schema = BLTE.ParseSchema(handle);
-    /// var decompressedBytes = schema.Execute(extractionHandle); // Dragons! Wizards! Time travel! Don't do this.
+    /// // Note that this is called on a different resource handle than the one used to parse.
+    /// // This is usually not recommended but will be fine if you can guarantee that both
+    /// // resources are using the same schema.
+    /// var decompressedBytes = schema.Execute(extractionHandle);
     /// 
     /// // Example of use of the single-step implementation
     /// ResourceHandle handle = ...;
@@ -45,8 +53,8 @@ namespace Blizztrack.Framework.TACT.Implementation
     /// ResourceHandle handle = ...;
     /// var schema = BLTE.ParseSchema(handle);
     /// // The ranges provided below are relative to the decompressed file.
-    /// var decompressedFragment = schema.Execute(handle, 0..1024); // Gets at most the first 1024 bytes of the file.
-    /// var decompressedFragment = schema.Execute(handle, 100..200); // Gets 100 bytes of the file starting at offset 100.
+    /// var decompressedFragment = schema.Execute(handle, 0..1024);
+    /// var decompressedFragment = schema.Execute(handle, 100..200);
     /// </code>
     /// </example>
     public readonly struct BLTE
