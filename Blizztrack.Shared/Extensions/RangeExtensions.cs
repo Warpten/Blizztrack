@@ -17,6 +17,22 @@ namespace Blizztrack.Shared.Extensions
         public static Range Shift(this Range range, int offset)
             => new(range.Start.Value + offset, range.End.Value + offset);
 
+        public static Range Intersection(this Range range, int targetSize, Range otherRange)
+        {
+            var (start, length) = range.GetOffsetAndLength(targetSize);
+            var end = start + length;
+
+            var (otherStart, otherLength) = otherRange.GetOffsetAndLength(targetSize);
+            var otherEnd = otherStart + otherLength;
+
+            start = Math.Max(start, otherStart);
+            end = Math.Min(end, otherEnd);
+            if (end < start)
+                return default;
+
+            return new Range(start, end);
+        }
+
         /// <summary>
         /// Computes the minimal intersecting range of this range and N other ranges over a buffer of <paramref name="targetSize"/> elements.
         /// </summary>
@@ -43,6 +59,9 @@ namespace Blizztrack.Shared.Extensions
 
                 start = Math.Max(start, itrStart);
                 end = Math.Min(end, itrEnd);
+
+                if (start > end)
+                    return default;
             }
 
             return new Range(start, end);
