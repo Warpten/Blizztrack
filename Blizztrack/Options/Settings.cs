@@ -68,6 +68,10 @@ namespace Blizztrack.Options
         public required string User { get; init; }
         public required string Password { get; init; }
 
+#if DEBUG
+        public override string ToString() => $"Host={Host}; Port={Port}; Database={Database}; User Id={User}; Password={Password}; Include Error Detail=True";
+#else
         public override string ToString() => $"Host={Host}; Port={Port}; Database={Database}; User Id={User}; Password={Password}";
+#endif
     }
 }

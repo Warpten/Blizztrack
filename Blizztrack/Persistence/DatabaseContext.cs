@@ -26,6 +26,10 @@ namespace Blizztrack.Persistence
                 .HasMany(e => e.Endpoints)
                 .WithMany(e => e.Products);
 
+            modelBuilder.Entity<Product>()
+                .HasMany(e => e.Configurations)
+                .WithOne(e => e.Product);
+
             modelBuilder.Entity<ProductConfig>(e => e.HasIndex(nameof(ProductConfig.BuildConfig),
                 nameof(ProductConfig.CDNConfig),
                 nameof(ProductConfig.KeyRing),

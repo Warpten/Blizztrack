@@ -2,9 +2,12 @@
 using Blizztrack.Options;
 using Blizztrack.Persistence;
 using Blizztrack.Persistence.Entities;
+using Blizztrack.Shared.Extensions;
 
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
+
 using System.Diagnostics;
 using System.Linq.Expressions;
 using System.Net;
@@ -14,6 +17,8 @@ using static Blizztrack.Program;
 
 namespace Blizztrack.Services.Hosted
 {
+    using PersistedEndpoint = Persistence.Entities.Endpoint;
+
     /// <summary>
     /// A singleton service in charge of periodically querying product state for every product declared in <see cref="Settings.Products"/>.
     /// </summary>
@@ -33,7 +38,7 @@ namespace Blizztrack.Services.Hosted
             });
 
             // Staging buffer for sequence numbers of the currently tested product.
-            var sequenceNumbers = new int[Enum.GetValues<SequenceNumberType>().Length];
+            var sequenceNumbers = new int[(int) Enum.GetValues<SequenceNumberType>().Length];
 
             while (!stoppingToken.IsCancellationRequested)
             {
@@ -71,132 +76,250 @@ namespace Blizztrack.Services.Hosted
                         }
                     }
 
-                    var productConfigStaging = new List<ProductConfig>();
-                    var productStaging = databaseContext.Products.ToDictionary(e => e.Code);
-                    var endpointStaging = databaseContext.Endpoints.ToDictionary(e => (e.Host, e.ConfigurationPath, e.DataPath));
+                    List<Func<ValueTask>> valuePublishers = [];
 
-                    foreach (var productUpdate in summaryTable.Entries.GroupBy(e => e.Product))
+                    foreach (var (productCode, productUpdates) in summaryTable.Entries.GroupBy(e => e.Product))
                     {
                         // Product is not monitored, get out.
-                        if (!monitoredProducts.Contains(productUpdate.Key))
+                        if (!monitoredProducts.Contains(productCode))
                             continue;
 
                         // Flatten sequence numbers.
                         sequenceNumbers.AsSpan().Clear();
-                        foreach (var kv in productUpdate)
+                        foreach (var kv in productUpdates)
                             sequenceNumbers[(int) kv.Flags] = kv.SequenceNumber;
                         
-                        // Can't use GetValueRefOrAddDefault because of await boundaries...
-                        var entityExists = productStaging.TryGetValue(productUpdate.Key, out var cacheEntry);
-                        if (!entityExists) 
-                            productStaging.Add(productUpdate.Key, cacheEntry = new Product() { Code = productUpdate.Key });
-
-                        if (cacheEntry!.CanPublishUpdate(sequenceNumbers))
-                            await _mediatorService.Products.OnSummary.Writer.WriteAsync((productUpdate.Key, sequenceNumbers), stoppingToken);
+                        // Get the product record.
+                        var productState = databaseContext.Products
+                            .Include(e => e.Endpoints)
+                            .Include(e => e.Configurations)
+                            .SingleOrDefault(e => e.Code == productCode);
+                        var publishUpdate = productState?.CanPublishUpdate(sequenceNumbers) ?? true;
 
                         // CDN handling is special; We also want to check it if somehow there are no CDNs available for this product in database.
                         // If that's the case, try to update.
-                        if (!entityExists || sequenceNumbers[(int) SequenceNumberType.CDN] != cacheEntry!.CDN)
+                        if (productState == null || productState.CDN != sequenceNumbers[(int) SequenceNumberType.CDN])
                         {
-                            using var __ = StartTaggedActivity("blizztrack.ribbit.cdns", () => [
-                                ("blizztrack.ribbit.product", productUpdate.Key),
-                                ("blizztrack.ribbit.sequence", cacheEntry.CDN)
-                            ]);
+                            var (newProduct, eventSource) = await UpdateCDN(productCode, queryEndpoint, sequenceNumbers[(int) SequenceNumberType.CDN],
+                                productState, databaseContext, stoppingToken);
+                            if (newProduct is not null)
+                                databaseContext.Products.Add(newProduct);
 
-                            var cdns = await Commands.GetProductCDNs(productUpdate.Key, queryEndpoint.Host, queryEndpoint.Port, stoppingToken);
-                            if (cdns.SequenceNumber == sequenceNumbers[(int) SequenceNumberType.CDN])
-                            {
-                                // Coherent data; update.
-                                cacheEntry!.CDN = cdns.SequenceNumber;
-
-                                await _mediatorService.Products.OnCDNs.Writer.WriteAsync((productUpdate.Key, cdns), stoppingToken);
-
-                                // Also populate endpoints
-                                cacheEntry.Endpoints.Clear();
-                                foreach (var endpoint in cdns.Entries.SelectMany(e => e.Hosts.Select(h => (Host: h, e.Name, e.ConfigPath, e.Path)))
-                                    .GroupBy(e => (e.Host, e.ConfigPath, e.Path), e => e.Name))
-                                {
-                                    ref var endpointCacheEntry = ref CollectionsMarshal.GetValueRefOrAddDefault(endpointStaging, endpoint.Key, out var endpointExists);
-                                    if (!endpointExists)
-                                        endpointCacheEntry = new() { Host = endpoint.Key.Host, ConfigurationPath = endpoint.Key.ConfigPath, DataPath = endpoint.Key.Path };
-
-                                    endpointCacheEntry!.Regions = [.. endpoint];
-
-                                    cacheEntry.Endpoints.Add(endpointCacheEntry);
-                                }
-                            }
+                            productState ??= newProduct;
+                            valuePublishers.Add(eventSource);
                         }
 
-                        if (!entityExists || sequenceNumbers[(int) SequenceNumberType.Version] != cacheEntry!.Version)
+                        if (productState == null || productState.Version != sequenceNumbers[(int) SequenceNumberType.Version])
                         {
-                            using var __ = StartTaggedActivity("blizztrack.ribbit.version", () => [
-                                ("blizztrack.ribbit.product", productUpdate.Key),
-                                ("blizztrack.ribbit.sequence", cacheEntry.Version)
-                            ]);
+                            var (newProduct, eventSource) = await UpdateVersion(productCode, queryEndpoint, sequenceNumbers[(int) SequenceNumberType.Version],
+                                productState, databaseContext, stoppingToken);
 
-                            var versions = await Commands.GetProductVersions(productUpdate.Key, queryEndpoint.Host, queryEndpoint.Port, stoppingToken);
-                            if (versions.SequenceNumber == sequenceNumbers[(int) SequenceNumberType.Version])
-                            {
-                                cacheEntry!.Version = versions.SequenceNumber;
+                            if (newProduct is not null)
+                                databaseContext.Products.Add(newProduct);
 
-                                await _mediatorService.Products.OnVersions.Writer.WriteAsync((productUpdate.Key, versions), stoppingToken);
-
-                                // Look through the PSV file, aggregating rows that are identical (diregarding the region), and store any new tuple in database.
-                                foreach (var version in versions.Entries.GroupBy(v => (v.BuildConfig, v.CDNConfig, v.KeyRing, v.ProductConfig, v.BuildID, v.VersionsName)))
-                                {
-                                    var regions = version.Select(v => v.Region);
-
-                                    if (!databaseContext.Configs.Any(c => c.BuildConfig == version.Key.BuildConfig
-                                        && c.CDNConfig == version.Key.CDNConfig
-                                        && c.KeyRing == version.Key.KeyRing
-                                        && c.Config == version.Key.ProductConfig
-                                        && c.BuildID == version.Key.BuildID
-                                        && c.Name == version.Key.VersionsName))
-                                    {
-                                        // New entry.
-                                        productConfigStaging.Add(new ProductConfig()
-                                        {
-                                            BuildConfig = version.Key.BuildConfig,
-                                            CDNConfig = version.Key.CDNConfig,
-                                            BuildID = version.Key.BuildID,
-                                            Config = version.Key.ProductConfig,
-                                            KeyRing = version.Key.KeyRing,
-                                            Regions = [.. regions],
-                                            Name = version.Key.VersionsName,
-                                            Product = cacheEntry!
-                                        });
-                                    }
-
-                                }
-                            }
+                            productState ??= newProduct;
+                            valuePublishers.Add(eventSource);
                         }
 
-                        if (!entityExists || sequenceNumbers[(int) SequenceNumberType.BGDL] != cacheEntry!.BGDL)
+                        if (productState == null || productState.BGDL != sequenceNumbers[(int) SequenceNumberType.BGDL])
                         {
-                            using var __ = StartTaggedActivity("blizztrack.ribbit.bgdl", () => [
-                                ("blizztrack.ribbit.product", productUpdate.Key),
-                                ("blizztrack.ribbit.sequence", cacheEntry.Version)
-                            ]);
+                            var (newProduct, eventSource) = await UpdateBGDL(productCode, queryEndpoint, sequenceNumbers[(int) SequenceNumberType.BGDL],
+                                productState, databaseContext, stoppingToken);
 
-                            var bgdl = await Commands.GetProductBGDL(productUpdate.Key, queryEndpoint.Host, queryEndpoint.Port, stoppingToken);
-                            if (bgdl.SequenceNumber == sequenceNumbers[(int) SequenceNumberType.BGDL])
-                            {
-                                cacheEntry!.BGDL = bgdl.SequenceNumber;
+                            if (newProduct is not null)
+                                databaseContext.Products.Add(newProduct);
 
-                                await _mediatorService.Products.OnBGDL.Writer.WriteAsync((productUpdate.Key, bgdl), stoppingToken);
-                            }
+                            productState ??= newProduct;
+                            valuePublishers.Add(eventSource);
                         }
+
+                        await databaseContext.SaveChangesAsync(stoppingToken);
+
+                        // If the product record does not exist, or if the update can be published, send it out to the mediator service.
+                        if (publishUpdate)
+                            await _mediatorService.Products.OnSummary.Writer.WriteAsync((productCode, sequenceNumbers), stoppingToken);
                     }
 
-                    databaseContext.Endpoints.UpdateRange(endpointStaging.Values);
-                    databaseContext.Products.UpdateRange(productStaging.Values);
-                    databaseContext.Configs.UpdateRange(productConfigStaging);
-                    await databaseContext.SaveChangesAsync(stoppingToken);
+                    foreach (var publisher in valuePublishers)
+                        await publisher();
                 }
 
                 // If we got here, the timer got pulled by configuration; start a new one.
                 periodicTimer = new(_settingsMonitor.CurrentValue.Ribbit.Interval);
             }
+        }
+
+        /// <summary>
+        /// Updates CDN information on a product.
+        /// </summary>
+        /// <param name="productCode">The product that's getting an update.</param>
+        /// <param name="queryEndpoint">The CDN endpoint that provided the update.</param>
+        /// <param name="sequenceNumber">The newly seen sequence number.</param>
+        /// <param name="cacheEntry">The product, if it already is in database.</param>
+        /// <param name="stoppingToken">A cancellation token.</param>
+        /// <returns>A product to insert. If the product needed to be updated, it will be.</returns>
+        private async Task<(Product?, Func<ValueTask>)> UpdateCDN(string productCode, Options.Endpoint queryEndpoint, int sequenceNumber,
+            Product? cacheEntry, 
+            DatabaseContext databaseContext,
+            CancellationToken stoppingToken)
+        {
+            using var _ = StartTaggedActivity("blizztrack.ribbit.cdns", 
+                ("blizztrack.ribbit.product", productCode),
+                ("blizztrack.ribbit.sequence", sequenceNumber));
+
+            var cdns = await Commands.GetProductCDNs(productCode, queryEndpoint.Host, queryEndpoint.Port, stoppingToken);
+            if (cdns.SequenceNumber == sequenceNumber)
+            {
+                var isInsertion = cacheEntry is null;
+                cacheEntry ??= new () {
+                    Code = productCode
+                };
+
+                cacheEntry!.CDN = cdns.SequenceNumber;
+
+                // Update the product: update the endpoints associated with it, using the CDN reply as source of truth.
+                foreach (var (groupingKey, regions) in cdns.Entries
+                    .SelectMany(e => e.Hosts.Select(h => (Host: h, e.Name, e.ConfigPath, e.Path)))
+                    .GroupBy(e => (e.Host, e.ConfigPath, e.Path), e => e.Name))
+                {
+                    // Find an endpoint that matches; if none, create it.
+                    var persistedEndpoint = cacheEntry.Endpoints.SingleOrDefault(e => e.Host == groupingKey.Host
+                        && e.ConfigurationPath == groupingKey.ConfigPath
+                        && e.DataPath == groupingKey.Path);
+                    if (persistedEndpoint is null)
+                    {
+                        cacheEntry.Endpoints.Add(new()
+                        {
+                            Host = groupingKey.Host,
+                            ConfigurationPath = groupingKey.ConfigPath,
+                            DataPath = groupingKey.Path,
+                            Regions = [.. regions]
+                        });
+                    }
+                    else
+                    {
+                        string[] newRegions = [.. regions];
+
+                        if (!persistedEndpoint.Regions.SequenceEqual(newRegions))
+                            persistedEndpoint.Regions = newRegions;
+                    }
+                }
+
+                return (
+                    isInsertion ? cacheEntry : default,
+                    () => _mediatorService.Products.OnCDNs.Writer.WriteAsync((productCode, cdns), stoppingToken)
+                );
+            }
+
+            return (default, () => ValueTask.CompletedTask);
+        }
+
+        /// <summary>
+        /// Updates version information on a Product.
+        /// </summary>
+        /// <param name="productCode">The product that's getting an update.</param>
+        /// <param name="queryEndpoint">The CDN endpoint that provided the update.</param>
+        /// <param name="sequenceNumber">The newly seen sequence number.</param>
+        /// <param name="cacheEntry">The product, if it already is in database.</param>
+        /// <param name="stoppingToken">A cancellation token.</param>
+        /// <returns>A product to insert. If the product needed to be updated, it will be.</returns>
+        private async Task<(Product?, Func<ValueTask>)> UpdateVersion(string productCode, Options.Endpoint queryEndpoint, int sequenceNumber,
+            Product? cacheEntry,
+            DatabaseContext databaseContext,
+            CancellationToken stoppingToken)
+        {
+            using var _ = StartTaggedActivity("blizztrack.ribbit.cdns",
+                ("blizztrack.ribbit.product", productCode),
+                ("blizztrack.ribbit.sequence", sequenceNumber));
+
+            var versions = await Commands.GetProductVersions(productCode, queryEndpoint.Host, queryEndpoint.Port, stoppingToken);
+            if (versions.SequenceNumber == sequenceNumber)
+            {
+                var isInsertion = cacheEntry is null;
+                cacheEntry ??= new() {
+                    Code = productCode
+                };
+
+                cacheEntry!.Version = versions.SequenceNumber;
+                cacheEntry.Configurations.Clear();
+
+                foreach (var version in versions.Entries.GroupBy(v => (v.BuildConfig, v.CDNConfig, v.KeyRing, v.ProductConfig, v.BuildID, v.VersionsName)))
+                {
+                    var regions = version.Select(v => v.Region);
+
+                    var persistedConfiguration = cacheEntry.Configurations.SingleOrDefault(c => c.BuildConfig == version.Key.BuildConfig
+                        && c.CDNConfig == version.Key.CDNConfig
+                        && c.KeyRing == version.Key.KeyRing
+                        && c.Config == version.Key.ProductConfig
+                        && c.BuildID == version.Key.BuildID
+                        && c.Name == version.Key.VersionsName);
+                    
+                    if (persistedConfiguration is null)
+                    {
+                        cacheEntry.Configurations.Add(new()
+                        {
+                            BuildConfig = version.Key.BuildConfig,
+                            CDNConfig = version.Key.CDNConfig,
+                            BuildID = version.Key.BuildID,
+                            Config = version.Key.ProductConfig,
+                            KeyRing = version.Key.KeyRing,
+                            Regions = [.. regions],
+                            Name = version.Key.VersionsName,
+                            Product = cacheEntry!
+                        });
+                    }
+                    else
+                    {
+                        // ?
+                        int x = 1;
+                    }
+                }
+
+                return (
+                    isInsertion ? cacheEntry : default,
+                    () => _mediatorService.Products.OnVersions.Writer.WriteAsync((productCode, versions), stoppingToken)
+                );
+            }
+
+            return (default, () => ValueTask.CompletedTask);
+        }
+
+        /// <summary>
+        /// Updates BGDL information on a Product.
+        /// </summary>
+        /// <param name="productCode">The product that's getting an update.</param>
+        /// <param name="queryEndpoint">The CDN endpoint that provided the update.</param>
+        /// <param name="sequenceNumber">The newly seen sequence number.</param>
+        /// <param name="cacheEntry">The product, if it already is in database.</param>
+        /// <param name="stoppingToken">A cancellation token.</param>
+        /// <returns>A product to insert. If the product needed to be updated, it will be.</returns>
+        private async Task<(Product?, Func<ValueTask>)> UpdateBGDL(string productCode, Options.Endpoint queryEndpoint, int sequenceNumber,
+            Product? cacheEntry,
+            DatabaseContext databaseContext,
+            CancellationToken stoppingToken)
+        {
+            using var _ = StartTaggedActivity("blizztrack.ribbit.bgdl",
+                ("blizztrack.ribbit.product", productCode),
+                ("blizztrack.ribbit.sequence", sequenceNumber));
+
+
+            var bgdl = await Commands.GetProductBGDL(productCode, queryEndpoint.Host, queryEndpoint.Port, stoppingToken);
+            if (bgdl.SequenceNumber == sequenceNumber)
+            {
+                var isInsertion = cacheEntry is null;
+                cacheEntry ??= new() {
+                    Code = productCode
+                };
+
+                cacheEntry!.BGDL = bgdl.SequenceNumber;
+
+                return (
+                    isInsertion ? cacheEntry : default,
+                    () => _mediatorService.Products.OnVersions.Writer.WriteAsync((productCode, bgdl), stoppingToken)
+                );
+            }
+
+            return (default, () => ValueTask.CompletedTask);
         }
 
         private static async Task<bool> IsUpdatePublishable(string productCode, int summarySequenceNumber, Expression<Func<Product, int>> fieldAccessor,

@@ -22,8 +22,8 @@ namespace Blizztrack.API
     public class FileSystemController(DatabaseContext databaseContext, FileSystemSupplier fileSystems, IResourceLocator resourceLocator) : ControllerBase
     {
         #region p/{productCode}/b/{buildConfiguration}/s/{serverConfiguration}/...
-        [HttpGet("p/{productCode}/b/{buildConfiguration}/s/{serverConfiguration}/fdid/{fileDataID:uint}/get")]
-        [HttpHead("p/{productCode}/b/{buildConfiguration}/s/{serverConfiguration}/fdid/{fileDataID:uint}/get")]
+        [HttpGet("p/{productCode}/b/{buildConfiguration}/s/{serverConfiguration}/fdid/{fileDataID:int}/get")]
+        [HttpHead("p/{productCode}/b/{buildConfiguration}/s/{serverConfiguration}/fdid/{fileDataID:int}/get")]
         [OpenApiOperation("Extracts a file from a file system configuration.", """
             Streams back the decompressed file to the REST client.
 
@@ -92,8 +92,8 @@ namespace Blizztrack.API
         #endregion
 
         #region c/{configurationName}/...
-        [HttpGet("c/{configurationName}/fdid/{fileDataID:uint}/get")]
-        [HttpHead("c/{configurationName}/fdid/{fileDataID:uint}/get")]
+        [HttpGet("c/{configurationName}/fdid/{fileDataID:int}/get")]
+        [HttpHead("c/{configurationName}/fdid/{fileDataID:int}/get")]
         [OpenApiOperation("Extracts a file from a file system configuration.", """
             Streams back the decompressed file to the REST client.
 

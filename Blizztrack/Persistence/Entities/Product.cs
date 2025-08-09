@@ -56,11 +56,11 @@ namespace Blizztrack.Persistence.Entities
         /// <summary>
         /// The set of endpoints this product can use.
         /// </summary>
-        public ICollection<Endpoint> Endpoints { get; set; } = [];
+        public List<Endpoint> Endpoints { get; set; } = [];
 
         /// <summary>
         /// A set of configurations that use this product.
         /// </summary>
-        public ICollection<ProductConfig> Configurations { get; set; } = [];
+        public List<ProductConfig> Configurations { get; set; } = [];
     }
 }

@@ -244,10 +244,10 @@ namespace Blizztrack.Framework.Ribbit
         public record struct Entry(string Region, EncodingKey BuildConfig, EncodingKey CDNConfig, EncodingKey KeyRing, uint BuildID, string VersionsName, EncodingKey ProductConfig);
     }
 
-    public enum SequenceNumberType
+    public enum SequenceNumberType : int
     {
         Version = 0,
         CDN = 1,
-        BGDL = 2,
+        BGDL = 2
     }
 }

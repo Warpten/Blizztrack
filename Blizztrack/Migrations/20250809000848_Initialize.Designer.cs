@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Blizztrack.Migrations
 {
     [DbContext(typeof(DatabaseContext))]
-    [Migration("20250602210658_Initialize")]
+    [Migration("20250809000848_Initialize")]
     partial class Initialize
     {
         /// <inheritdoc />
@@ -55,6 +55,39 @@ namespace Blizztrack.Migrations
                         .IsUnique();
 
                     b.ToTable("Endpoint", "ribbit");
+                });
+
+            modelBuilder.Entity("Blizztrack.Persistence.Entities.KnownResource", b =>
+                {
+                    b.Property<long>("ID")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("ID"));
+
+                    b.Property<byte[]>("ContentKey")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<byte[]>("EncodingKey")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<string>("Specification")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("ID");
+
+                    b.HasIndex("ContentKey");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("ContentKey"), "hash");
+
+                    b.HasIndex("EncodingKey");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("EncodingKey"), "hash");
+
+                    b.ToTable("KnownResource", "tact");
                 });
 
             modelBuilder.Entity("Blizztrack.Persistence.Entities.Product", b =>

@@ -77,6 +77,9 @@ namespace Blizztrack.Services
                 return localHandle;
 
             var endpoints = GetEndpoints(resourceDescriptor.Product);
+            if (endpoints.Count == 0)
+                return default;
+
             var backendQuery = await ExecuteQuery(endpoints, resourceDescriptor, stoppingToken);
             if (backendQuery.StatusCode != HttpStatusCode.OK)
                 return default;
@@ -226,7 +229,7 @@ namespace Blizztrack.Services
         /// <param name="productCode"></param>
         /// <param name="region"></param>
         /// <returns></returns>
-        private IEnumerable<PatchEndpoint> GetEndpoints(string productCode, string region = "xx")
+        private IList<PatchEndpoint> GetEndpoints(string productCode, string region = "xx")
         {
             var endpointsQuery = _databaseContext.Endpoints.Include(e => e.Products).Where(e => e.Products.Any(p => p.Code == productCode));
             if (region != "xx")

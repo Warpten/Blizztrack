@@ -7,8 +7,6 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 
-#pragma warning disable BT003 // Type or member is obsolete
-
 namespace Blizztrack.Framework.TACT.Implementation
 {
     /// <summary>
@@ -228,7 +226,6 @@ namespace Blizztrack.Framework.TACT.Implementation
 
             return ParseSchema(memoryManager[..], encodingKey, decompressedSize);
         }
-
 
         [Conditional("DEBUG")]
         private static void EnsureSchemaValidity(ChunkInfo[] chunks, long decompressedSize)

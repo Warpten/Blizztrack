@@ -68,7 +68,7 @@ namespace Blizztrack.Framework.TACT
         public string AsHexString() => Convert.ToHexStringLower(_data);
 
         public static bool operator ==(EncodingKey left, EncodingKey right) => left._data?.SequenceEqual(right._data ?? []) ?? (right._data == null);
-        public static bool operator !=(EncodingKey left, EncodingKey right) => (left == right);
+        public static bool operator !=(EncodingKey left, EncodingKey right) => !(left == right);
 
         static EncodingKey IKey<EncodingKey>.From(ReadOnlySpan<byte> data) => new(data);
 

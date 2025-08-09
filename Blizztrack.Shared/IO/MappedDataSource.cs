@@ -22,8 +22,8 @@ namespace Blizztrack.Shared.IO
         /// <exception cref="IOException">An I/O error occurred.</exception>
         public MappedDataSource(string filePath, long offset = 0, int length = 0)
         {
-            _memoryMappedFile = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
-            _accessor = _memoryMappedFile.CreateViewAccessor(offset, length);
+            _memoryMappedFile = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, length, MemoryMappedFileAccess.Read);
+            _accessor = _memoryMappedFile.CreateViewAccessor(offset, length, MemoryMappedFileAccess.Read);
 
             unsafe
             {

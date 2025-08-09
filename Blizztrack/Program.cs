@@ -39,11 +39,11 @@ namespace Blizztrack
             return cancellable;
         }
 
-        public static Activity? StartTaggedActivity(string activityName, Func<IEnumerable<ValueTuple<string, object?>>> tags)
+        public static Activity? StartTaggedActivity(string activityName, params ReadOnlySpan<ValueTuple<string, object?>> tags)
         {
             var activity = ActivitySupplier.StartActivity(activityName);
             if (activity is not null)
-                foreach (var (k, v) in tags())
+                foreach (var (k, v) in tags)
                     activity.AddTag(k, v);
 
             return activity;

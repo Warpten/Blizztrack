@@ -1,5 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore.Migrations;
-
+﻿using System;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
@@ -33,6 +33,22 @@ namespace Blizztrack.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_Endpoint", x => x.ID);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "KnownResource",
+                schema: "tact",
+                columns: table => new
+                {
+                    ID = table.Column<long>(type: "bigint", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    EncodingKey = table.Column<byte[]>(type: "bytea", nullable: false),
+                    ContentKey = table.Column<byte[]>(type: "bytea", nullable: false),
+                    Specification = table.Column<string>(type: "text", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_KnownResource", x => x.ID);
                 });
 
             migrationBuilder.CreateTable(
@@ -122,6 +138,20 @@ namespace Blizztrack.Migrations
                 column: "ProductsID");
 
             migrationBuilder.CreateIndex(
+                name: "IX_KnownResource_ContentKey",
+                schema: "tact",
+                table: "KnownResource",
+                column: "ContentKey")
+                .Annotation("Npgsql:IndexMethod", "hash");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_KnownResource_EncodingKey",
+                schema: "tact",
+                table: "KnownResource",
+                column: "EncodingKey")
+                .Annotation("Npgsql:IndexMethod", "hash");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Product_Code",
                 schema: "ribbit",
                 table: "Product",
@@ -148,6 +178,10 @@ namespace Blizztrack.Migrations
             migrationBuilder.DropTable(
                 name: "EndpointProduct",
                 schema: "ribbit");
+
+            migrationBuilder.DropTable(
+                name: "KnownResource",
+                schema: "tact");
 
             migrationBuilder.DropTable(
                 name: "ProductConfiguration",

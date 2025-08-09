@@ -43,23 +43,23 @@ namespace Blizztrack.Framework.TACT.Resources
         /// <summary>
         /// The resource is a configuration file.
         /// </summary>
-        public static readonly ResourceType Config = new(0, "config/{1}/{2}/{3}");
+        public static readonly ResourceType Config = new(0, "config/{0}/{1}/{2}");
 
         /// <summary>
         /// The resource is an archive.
         /// </summary>
-        public static readonly ResourceType Data = new(1, "data/{1}/{2}/{3}");
+        public static readonly ResourceType Data = new(1, "data/{0}/{1}/{2}");
 
         /// <summary>
         /// The resource is an archive index.
         /// </summary>
-        public static readonly ResourceType Indice = new(2, "data/{1}/{2}/{3}.index", "indices/{1}/{2}/{3}");
+        public static readonly ResourceType Indice = new(2, "data/{0}/{1}/{2}.index", "indices/{0}/{1}/{2}");
 
         /// <summary>
         /// Technically not a true resource type; this type denotes files that have been locally
         /// cached on disk after decompression.
         /// </summary>
-        public static readonly ResourceType Decompressed = new(3, "data/{1}/{2}/{3}", "decompressed/{1}/{2}/{3}");
+        public static readonly ResourceType Decompressed = new(3, "data/{0}/{1}/{2}", "decompressed/{0}/{1}/{2}");
 
         public static bool operator ==(ResourceType lhs, ResourceType rhs) => lhs._index == rhs._index;
         public static bool operator !=(ResourceType lhs, ResourceType rhs) => lhs._index != rhs._index;
