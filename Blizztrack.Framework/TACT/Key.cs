@@ -97,9 +97,8 @@ namespace Blizztrack.Framework.TACT
                 return [];
 
             var dest = GC.AllocateUninitializedArray<T>(sections.Length);
-            var i = 0;
-            foreach (var section in sections)
-                dest[i] = T.FromString(str[section]);
+            for (var i = 0; i < dest.Length; ++i)
+                dest[i] = T.FromString(str[sections[i]]);
             return dest;
         }
 

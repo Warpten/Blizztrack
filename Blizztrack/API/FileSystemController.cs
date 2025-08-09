@@ -9,6 +9,7 @@ using Blizztrack.Persistence;
 using Blizztrack.Services;
 
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 using NSwag.Annotations;
 
@@ -228,7 +229,9 @@ namespace Blizztrack.API
 
         private async Task<IFileSystem> ResolveFileSystem(string configurationName, CancellationToken stoppingToken)
         {
-            var configuration = databaseContext.Configs.SingleOrDefault(c => c.Name == configurationName);
+            var configuration = databaseContext.Configs
+                .Include(e => e.Product)
+                .SingleOrDefault(c => c.Name == configurationName);
             if (configuration is null)
                 throw new InvalidOperationException();
 

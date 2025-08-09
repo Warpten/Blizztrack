@@ -130,6 +130,11 @@ namespace Blizztrack
                 .AddSingleton<ContentService>()
                 .AddSingleton<LocalCacheService>()
                 .AddSingleton<IResourceLocator, ResourceLocatorService>()
+
+                .AddSingleton<RootCache>()
+                .AddSingleton<EncodingCache>()
+                .AddSingleton<FileSystemSupplier>()
+
                 // Repositories that provide shared instances of various TACT file types.
                 .AddSingleton<InstallCache>()
                 .AddSingleton<EncodingCache>()

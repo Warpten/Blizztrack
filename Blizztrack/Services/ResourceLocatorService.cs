@@ -192,7 +192,7 @@ namespace Blizztrack.Services
             where T : class, IResourceParser<T>
         {
             var decompressedHandle = _localCache.OpenHandle(decompressed);
-            if (decompressedHandle != default)
+            if (decompressedHandle != default && decompressedHandle.Exists)
                 return T.OpenResource(decompressedHandle);
 
             // Create the decompressed resource now.
@@ -291,7 +291,7 @@ namespace Blizztrack.Services
         public async Task<Stream> OpenStream(ResourceDescriptor descriptor, CancellationToken stoppingToken = default)
         {
             var localHandle = _localCache.OpenHandle(descriptor);
-            if (localHandle.Exists)
+            if (localHandle.Exists && localHandle.Exists)
                 return localHandle.ToStream();
 
             var endpoints = GetEndpoints(descriptor.Product);

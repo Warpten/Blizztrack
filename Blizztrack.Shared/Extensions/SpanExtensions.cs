@@ -118,14 +118,13 @@ namespace Blizztrack.Shared.Extensions
             for (var i = 0; i < source.Length;)
             {
                 var delimiterIndex = source[i..].IndexOf(delimiter);
-
                 if (delimiterIndex == -1)
-                    delimiterIndex = source.Length;
+                    delimiterIndex = source.Length - i;
 
-                if (!removeEmptyEntries || delimiterIndex != i + 1)
-                    list.Add(new Range(i, delimiterIndex));
+                if (!removeEmptyEntries || delimiterIndex != 1)
+                    list.Add(new Range(i, i + delimiterIndex));
 
-                i = delimiterIndex + 1;
+                i += delimiterIndex + 1;
             }
 
             return [.. list];
