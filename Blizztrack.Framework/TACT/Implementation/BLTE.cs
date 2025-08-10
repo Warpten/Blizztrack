@@ -1,14 +1,19 @@
-﻿using Blizztrack.Shared.Extensions;
-using Blizztrack.Framework.TACT.Resources;
+﻿using Blizztrack.Framework.TACT.Resources;
+using Blizztrack.Shared.Extensions;
+using Blizztrack.Shared.IO;
 
+using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
-using System.Buffers.Binary;
+
+using static Blizztrack.Framework.TACT.Implementation.Install;
 
 namespace Blizztrack.Framework.TACT.Implementation
 {
+    // TODO: Clean up this file
+
     /// <summary>
     /// This object describes a specific BLTE schema.
     /// 
@@ -57,15 +62,44 @@ namespace Blizztrack.Framework.TACT.Implementation
     /// </example>
     public readonly struct BLTE
     {
-        public readonly int Flags;
         private readonly ChunkInfo[] _chunks;
+        private readonly int _decompressedSize;
 
-        public int DecompressedSize => _chunks[^1].Decompressed.End.Value;
+        public readonly int Flags;
 
-        private BLTE(int flags, ChunkInfo[] chunks)
+        private BLTE(int flags, int decompressedSize, ChunkInfo[] chunks)
         {
-            Flags = flags;
             _chunks = chunks;
+            _decompressedSize = decompressedSize;
+
+            Flags = flags;
+        }
+
+        public static async Task<BLTE> Parse(Stream sourceStream, string specification, CancellationToken stoppingToken = default)
+        {
+            // 1. Read the top of the file.
+            var dataBuffer = new byte[8];
+            await sourceStream.ReadExactlyAsync(dataBuffer, stoppingToken);
+
+            if (BinaryPrimitives.ReadUInt32LittleEndian(dataBuffer) != 0x45544C42u)
+                throw new InvalidOperationException("The provided stream does not encapsulate a BLTE resource.");
+
+            var headerSize = BinaryPrimitives.ReadInt32BigEndian(dataBuffer.AsSpan(4));
+
+            // 2. Construct a complete header
+            var fileHeader = GC.AllocateUninitializedArray<byte>(headerSize);
+            Buffer.BlockCopy(dataBuffer, 0, fileHeader, 0, 8);
+            await sourceStream.ReadExactlyAsync(dataBuffer.AsMemory(8), stoppingToken);
+
+            // 3. Parse the header.
+            var dataSource = dataBuffer.ToDataSource();
+            var (flags, chunks, encodingKey) = ParseHeader(dataSource, 0, 0);
+
+            // 4. Read the spec string.
+            var chunkSpec = Spec.Parse(specification);
+
+            // 5. Update chunks with the compression modes.
+            throw new NotImplementedException();
         }
 
         /// <summary>
@@ -77,6 +111,7 @@ namespace Blizztrack.Framework.TACT.Implementation
         public static byte[] Parse(ResourceHandle resourceHandle, long decompressedSize = 0)
             => ParseSchema(resourceHandle, decompressedSize).Execute(resourceHandle);
 
+        [Obsolete("Use BLTE.Parse(Stream, string, CancellationToken) instead.")]
         public static async Task<MemoryStream> Parse(Stream sourceStream, long decompressedSize = 0, CancellationToken stoppingToken = default)
         {
             var schema = await ParseSchema(sourceStream, decompressedSize, stoppingToken);
@@ -92,8 +127,7 @@ namespace Blizztrack.Framework.TACT.Implementation
         {
             using var inputData = resourceHandle.ToMappedDataSource();
 
-            var decompressedSize = _chunks[^1].Decompressed.End.Value;
-            var dataBuffer = GC.AllocateUninitializedArray<byte>(decompressedSize);
+            var dataBuffer = GC.AllocateUninitializedArray<byte>(_decompressedSize);
 
             for (var i = 0; i < _chunks.Length; ++i)
             {
@@ -106,9 +140,7 @@ namespace Blizztrack.Framework.TACT.Implementation
 
         public async Task<MemoryStream> Execute(Stream sourceStream, CancellationToken stoppingToken = default)
         {
-            var decompressedSize = _chunks[^1].Decompressed.End.Value;
-
-            var outputBuffer = GC.AllocateUninitializedArray<byte>(decompressedSize);
+            var outputBuffer = GC.AllocateUninitializedArray<byte>(_decompressedSize);
 
             for (var i = 0; i < _chunks.Length; ++i)
             {
@@ -116,7 +148,7 @@ namespace Blizztrack.Framework.TACT.Implementation
                 var decompressedChunkEnd = _chunks[i].Decompressed.End.Value;
                 var outputRange = _chunks[i].Compressed;
 
-                var inputBuffer = getInputBuffer(compressedChunkSize, decompressedChunkEnd, outputBuffer, decompressedSize);
+                var inputBuffer = getInputBuffer(compressedChunkSize, decompressedChunkEnd, outputBuffer, _decompressedSize);
                 await sourceStream.ReadExactlyAsync(inputBuffer, stoppingToken);
 
                 // And now decompress
@@ -149,9 +181,8 @@ namespace Blizztrack.Framework.TACT.Implementation
         public unsafe byte[] Execute(ResourceHandle resourceHandle, Range dataRange)
         {
             using var inputData = resourceHandle.ToMappedDataSource();
-            var fileSize = _chunks[^1].Decompressed.End.Value;
 
-            var (_, decompressedLength) = dataRange.GetOffsetAndLength(fileSize);
+            var (_, decompressedLength) = dataRange.GetOffsetAndLength(_decompressedSize);
             var dataBuffer = GC.AllocateUninitializedArray<byte>(decompressedLength);
 
             for (var i = 0; i < _chunks.Length && decompressedLength != 0; ++i)
@@ -159,7 +190,7 @@ namespace Blizztrack.Framework.TACT.Implementation
                 ref var currentChunk = ref _chunks[i];
 
                 // Compute how many bytes we need to read in this chunk.
-                var chunkRange = dataRange.Intersection(fileSize, currentChunk.Decompressed);
+                var chunkRange = dataRange.Intersection(_decompressedSize, currentChunk.Decompressed);
                 if (chunkRange.Equals(default)) // No overlap ?
                     continue;
 
@@ -194,7 +225,7 @@ namespace Blizztrack.Framework.TACT.Implementation
         public unsafe static BLTE ParseSchema<K>(ReadOnlySpan<byte> fileData, K? encodingKey, long decompressedSize = 0)
             where K : notnull, IEncodingKey<K>, allows ref struct
         {
-            var (flags, chunks, expectedChecksum) = ParseHeader(fileData, 0, 0);
+            var (flags, chunks, expectedChecksum) = ParseHeader(fileData);
             EnsureSchemaValidity(chunks, decompressedSize);
 
             var checksumMatches = encodingKey?.SequenceEqual(expectedChecksum) ?? true;
@@ -203,7 +234,7 @@ namespace Blizztrack.Framework.TACT.Implementation
             if (chunks.Length == 0 || !checksumMatches || !sizeMatches)
                 return default;
 
-            return new BLTE(flags, chunks);
+            return new BLTE(flags, chunks[^1].Decompressed.End.Value, chunks);
         }
 
         /// <summary>
@@ -218,7 +249,7 @@ namespace Blizztrack.Framework.TACT.Implementation
         /// <returns>A schema that can then be used to parse a file.</returns>
         public unsafe static BLTE ParseSchema(ReadOnlySpan<byte> fileData, long decompressedSize = 0)
         {
-            var (flags, chunks, _) = ParseHeader(fileData, 0, 0);
+            var (flags, chunks, _) = ParseHeader(fileData);
             EnsureSchemaValidity(chunks, decompressedSize);
 
             var sizeMatches = decompressedSize == 0 || chunks[^1].Decompressed.End.Value == decompressedSize;
@@ -226,7 +257,7 @@ namespace Blizztrack.Framework.TACT.Implementation
             if (chunks.Length == 0 || !sizeMatches)
                 return default;
 
-            return new (flags, chunks);
+            return new (flags, chunks[^1].Decompressed.End.Value, chunks);
         }
 
         public static async ValueTask<BLTE> ParseSchema(Stream sourceStream, long decompressedSize = 0, CancellationToken stoppingToken = default)
@@ -262,7 +293,7 @@ namespace Blizztrack.Framework.TACT.Implementation
         {
             using var memoryManager = resourceHandle.ToMappedDataSource();
 
-            return ParseSchema(memoryManager[..], decompressedSize);
+            return ParseSchema(memoryManager..], decompressedSize);
         }
 
         /// <summary>
@@ -307,7 +338,54 @@ namespace Blizztrack.Framework.TACT.Implementation
         private static void ParseCompressed(ReadOnlySpan<byte> input, Span<byte> output, int discardCount)
             => Compression.Instance.Decompress(input, output, discardCount, windowBits: 15);
 
-        private static unsafe (int, ChunkInfo[], EncodingKey) ParseHeader(ReadOnlySpan<byte> fileData, int compressedBase = 0, int decompressedBase = 0)
+        private static unsafe void CompleteChunks(List<ChunkInfo> chunks, ReadOnlySpan<byte> fileData)
+        {
+            // This is another loop that abuses cache locality
+            // but also has special logic to flatten BLTE nested chunks.
+            for (var i = 0; i < chunks.Count; ++i)
+            {
+                // Because Span's indexer still does bounds checking.
+                ref var currentChunk = ref Unsafe.Add(ref MemoryMarshal.GetReference(CollectionsMarshal.AsSpan(chunks)), i);
+
+                var compressionMode = fileData[currentChunk.Compressed.Start.Value - 1];
+                switch (compressionMode)
+                {
+                    case (byte)'N':
+                        currentChunk.Parser = &ParseImmediate;
+                        break;
+                    case (byte)'Z':
+                        currentChunk.Parser = &ParseCompressed;
+                        break;
+                    case (byte)'F':
+                        var (_, nestedChunks, _) = ParseHeader(fileData[currentChunk.Compressed], currentChunk.Compressed.Start.Value, currentChunk.Decompressed.Start.Value);
+
+                        // Copy-insert everything - Not using RemoveAt + InsertRange because...
+                        // One regrow, two memmoves. More efficient on codegen (one less memmove incurred by RemoveAt)
+
+                        chunks.Capacity = chunks.Count + nestedChunks.Length - 1; // 1. Reallocate if necessary (one chunk will get written over)
+                        var targetSpan = CollectionsMarshal.AsSpan(chunks);
+                        targetSpan[(i + 1)..].CopyTo(targetSpan[(i + nestedChunks.Length)..]);  // 2. Move any chunk after this one ahead
+                        nestedChunks.AsSpan().CopyTo(targetSpan.Slice(i, nestedChunks.Length)); // 3. And insert the new ones, overwriting the current object in the process.
+
+                        i += nestedChunks.Length - 1; // Skip past the inserted chunks.
+                        break;
+                    default:
+                        throw new IndexOutOfRangeException(nameof(compressionMode));
+                }
+            }
+        }
+
+        /// <summary>
+        /// Reads the BLTE header from the given data source.
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="fileData"></param>
+        /// <param name="compressedBase"></param>
+        /// <param name="decompressedBase"></param>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static unsafe (int, List<ChunkInfo>, EncodingKey) ParseHeader<T>(T fileData, int compressedBase, int decompressedBase)
+            where T : IDataSource, allows ref struct
         {
             var magic = fileData[..4];
             if (!magic.SequenceEqual([(byte)'B', (byte)'L', (byte)'T', (byte)'E']))
@@ -318,8 +396,8 @@ namespace Blizztrack.Framework.TACT.Implementation
 
             var expectedChecksum = MD5.HashData(fileData[..headerSize]);
 
-            var flags = (int) flagsChunkCount >> 24;
-            var chunkCount = (int) (flagsChunkCount & 0x00FFFFFFu);
+            var flags = (int)flagsChunkCount >> 24;
+            var chunkCount = (int)(flagsChunkCount & 0x00FFFFFFu);
 
             var chunks = new List<ChunkInfo>(chunkCount);
 
@@ -343,41 +421,17 @@ namespace Blizztrack.Framework.TACT.Implementation
                 decompressedStart = decompressedRange.End.Value;
             }
 
-            // This is another loop that abuses cache locality
-            // but also has special logic to flatten BLTE nested chunks.
-            for (var i = 0; i < chunks.Count; ++i)
-            {
-                // Because Span's indexer still does bounds checking.
-                ref var currentChunk = ref Unsafe.Add(ref MemoryMarshal.GetReference(CollectionsMarshal.AsSpan(chunks)), i);
+            return (flags, chunks, new EncodingKey(expectedChecksum));
+        }
 
-                var compressionMode = fileData[currentChunk.Compressed.Start.Value - 1];
-                switch (compressionMode)
-                {
-                    case (byte) 'N':
-                        currentChunk.Parser = &ParseImmediate;
-                        break;
-                    case (byte) 'Z':
-                        currentChunk.Parser = &ParseCompressed;
-                        break;
-                    case (byte) 'F':
-                        var (_, nestedChunks, _) = ParseHeader(fileData[currentChunk.Compressed], currentChunk.Compressed.Start.Value, currentChunk.Decompressed.Start.Value);
+        private static unsafe (int, ChunkInfo[], EncodingKey) ParseHeader(ReadOnlySpan<byte> fileData, int compressedBase = 0, int decompressedBase = 0)
+        {
+            var (flags, chunks, encodingKey) = ParseHeader(fileData.ToDataSource(), compressedBase, decompressedBase);
+            if (flags == 0)
+                return (flags, [], default);
 
-                        // Copy-insert everything - Not using RemoveAt + InsertRange because...
-                        // One regrow, two memmoves. More efficient on codegen (one less memmove incurred by RemoveAt)
-
-                        chunks.Capacity = chunks.Count + nestedChunks.Length - 1; // 1. Reallocate if necessary (one chunk will get written over)
-                        var targetSpan = CollectionsMarshal.AsSpan(chunks);
-                        targetSpan[(i + 1)..].CopyTo(targetSpan[(i + nestedChunks.Length)..]);  // 2. Move any chunk after this one ahead
-                        nestedChunks.AsSpan().CopyTo(targetSpan.Slice(i, nestedChunks.Length)); // 3. And insert the new ones, overwriting the current object in the process.
-
-                        i += nestedChunks.Length - 1; // Skip past the inserted chunks.
-                        break;
-                    default:
-                        throw new IndexOutOfRangeException(nameof(compressionMode));
-                }
-            }
-
-            return (flags, [.. chunks], ((ReadOnlySpan<byte>) expectedChecksum).AsKey<EncodingKey>());
+            CompleteChunks(chunks, fileData);
+            return (flags, [.. chunks], encodingKey);
         }
 
         [DebuggerDisplay("{DebuggerDisplay,nq}")]
