@@ -11,6 +11,8 @@ namespace Blizztrack.Shared.IO
         private readonly MemoryMappedFile _memoryMappedFile;
         private readonly MemoryMappedViewAccessor _accessor;
         private readonly unsafe byte* _dataBuffer;
+        // TODO: The size should be stored here because if length = 0 at construction
+        //       the capacity of the buffer will be aligned to page size.
 
         /// <summary>
         /// Maps the given segment of the file.
@@ -48,7 +50,7 @@ namespace Blizztrack.Shared.IO
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
             {
-                var (offset, length) = range.GetOffsetAndLength((int) _accessor.Capacity);
+                var (offset, length) = range.GetOffsetAndLength((int) _accessor.SafeMemoryMappedViewHandle.ByteLength);
                 return Slice(offset, length);
             }
         }
@@ -61,7 +63,7 @@ namespace Blizztrack.Shared.IO
         public unsafe byte this[Index index]
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => _dataBuffer[index.GetOffset((int) _accessor.Capacity)];
+            get => _dataBuffer[index.GetOffset((int) _accessor.SafeMemoryMappedViewHandle.ByteLength)];
         }
     }
 }

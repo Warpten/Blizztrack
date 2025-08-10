@@ -40,11 +40,11 @@ namespace Blizztrack.Framework.TACT.Implementation
 
         public static Root Open<T>(T fileData) where T : IDataSource
         {
-            var magic = fileData.Slice(0, 4).ReadUInt32BE();
+            var magic = fileData.Slice(0, 4).ReadUInt32LE();
             var (format, version, headerSize, totalFileCount, namedFileCount) = magic switch
             {
                 0x4D465354 => ParseMFST(fileData),
-                _ => (Format.Legacy, 0, 12, 0, 0)
+                _ => (Format.Legacy, 0, 0, 0, 0)
             };
 
             // Skip the header.
@@ -62,20 +62,15 @@ namespace Blizztrack.Framework.TACT.Implementation
                 if (recordCount == 0)
                     continue;
 
-                // Determine conditions related to keeping this page.
-                var localeSkip = !pageHeader.HasFlag(AllWoW); // && !pageHeader.HasFlag(settings.Locale);
-                var contentSkip = pageHeader.HasFlag(Content.LowViolence);
-
                 // Calculate block size
-                // u32 fdids[recordCount] + MD5[recordCount] + u64 hash[recordCount]
+                // Legacy: u32[recordCount], {MD58, u64}[recordCount]
+                // MFST: u32[recordCount], MD5[recordCount], u64?[recordCount]
                 var blockSize = (sizeof(uint) + MD5.Length) * recordCount;
                 if (format == Format.Legacy || !(allowUnnamedFiles && !pageHeader.HasNames))
                     blockSize += sizeof(long) * recordCount;
 
                 // Regardless of wether or not this page is parsed we need to advance the read cursor.
                 var blockData = parseCursor.Advance(blockSize);
-                if (localeSkip || contentSkip)
-                    continue;
 
                 // Read a FDID delta array from the file (+1 implied) and adjust instantly.
                 var fdids = blockData.ReadInt32LE(recordCount);
@@ -153,8 +148,8 @@ namespace Blizztrack.Framework.TACT.Implementation
                     continue;
 
                 ref var record = ref page.Records.UnsafeIndex(fdidIndex);
-                Debug.Assert(record.FileDataID == fileDataID);
-                return ref record;
+                if (record.FileDataID == fileDataID)
+                    return ref record;
             }
 
             return ref Unsafe.NullRef<RootRecord>();
@@ -244,7 +239,7 @@ namespace Blizztrack.Framework.TACT.Implementation
             var headerSize = dataStream[4..].ReadInt32LE();
             var version = dataStream[8..].ReadInt32LE();
             if (headerSize > 1000)
-                return (Format.MFST, 0, 4 * 4, headerSize, version);
+                return (Format.MFST, 1, 4 * 4, headerSize, version);
 
             var totalFileCount = dataStream[12..].ReadInt32LE();
             var namedFileCount = dataStream[16..].ReadInt32LE();

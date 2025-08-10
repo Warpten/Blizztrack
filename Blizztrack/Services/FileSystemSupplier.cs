@@ -18,51 +18,62 @@ namespace Blizztrack.Services
             CancellationToken stoppingToken = default)
         {
             // NOTE: We don't rely on generating group indices because it allows us to reuse indices across multiple filesystems.
-            var sequencedLoader = OpenCore(productCode, buildConfiguration, stoppingToken);
+
+            var encodingTask = encodingRepository.Obtain(productCode, buildConfiguration.Encoding.Content.Key, buildConfiguration.Encoding.Encoding.Key, stoppingToken)
+                .AsTask();
+
             var indexTasks = cdnConfiguration.Archives
                 .Select(archive => OpenIndex(productCode, archive, locator, stoppingToken));
 
-            await Task.WhenAll([sequencedLoader, ..indexTasks]);
+            var fileIndexTask = cdnConfiguration.FileIndex.Size != 0
+                ? OpenIndex(productCode, cdnConfiguration.FileIndex.Key, locator, stoppingToken)
+                : Task.FromResult<IIndex?>(default);
 
-            var compoundedIndex = new CompoundingIndex([.. indexTasks.Select(i => i.Result)]);
-            var (encoding, root) = await sequencedLoader;
+            await Task.WhenAll([encodingTask, fileIndexTask, ..indexTasks]);
 
-            var install = await installRepository.Obtain(productCode, buildConfiguration.Install.Content.Key, buildConfiguration.Install.Encoding.Key, stoppingToken);
+            var fileIndex = await fileIndexTask;
+            var encoding = await encodingTask;
+            var compoundedIndex = new CompoundingIndex([.. indexTasks.Select(i => i.Result!)]);
 
-            var fileIndex = cdnConfiguration.FileIndex.Size != 0
-                ? await OpenIndex(productCode, cdnConfiguration.FileIndex.Key, locator, stoppingToken)
-                : default;
+            var rootTask = ResolveRoot(productCode, encoding, compoundedIndex, fileIndex, buildConfiguration.Root, stoppingToken);
+            var installTask = installRepository.Obtain(productCode, buildConfiguration.Install.Content.Key, buildConfiguration.Install.Encoding.Key, stoppingToken).AsTask();
+
+            await Task.WhenAll([rootTask, installTask]);
+
+            var root = await rootTask;
+            var install = await installTask;
 
 #pragma warning disable BT002
-            return new FileSystem<CompoundingIndex, Index<MappedDataSource>>(productCode, compoundedIndex, encoding, root, install, fileIndex);
+            return new FileSystem<CompoundingIndex>(productCode, compoundedIndex, encoding, root, install, fileIndex);
 #pragma warning restore BT002
         }
 
+        private async Task<Root?> ResolveRoot(string productCode, Encoding encoding, CompoundingIndex compoundedIndex, IIndex? fileIndex, ContentKey root, CancellationToken stoppingToken)
+        {
+            var results = encoding.FindContentKey(root);
+            if (results.Count == 0)
+                return default;
+
+            foreach (var encodingKey in results.Keys)
+            {
+                var archiveInfo = compoundedIndex.FindEncodingKey(in encodingKey);
+                if (!archiveInfo && fileIndex is not null)
+                    archiveInfo = fileIndex.FindEncodingKey(in encodingKey);
+
+                if (archiveInfo)
+                    return await rootRepository.Obtain(productCode, archiveInfo.Archive, stoppingToken);
+            }
+
+            return default;
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static async Task<Index<MappedDataSource>> OpenIndex(string productCode, EncodingKey encodingKey, IResourceLocator locator, CancellationToken stoppingToken)
+        private static async Task<IIndex?> OpenIndex(string productCode, EncodingKey encodingKey, IResourceLocator locator, CancellationToken stoppingToken)
         {
             var descriptor = ResourceType.Indice.ToDescriptor(productCode, encodingKey);
             var handle = await locator.OpenHandle(descriptor, stoppingToken);
             // TODO: Pool this call.
             return Index.Open(handle.ToMappedDataSource(), encodingKey);
-        }
-
-        public async Task<(Encoding, Root?)> OpenCore(string productCode, BuildConfiguration buildConfiguration,  CancellationToken stoppingToken)
-        {
-            var encoding = await encodingRepository.Obtain(productCode, buildConfiguration.Encoding.Content.Key, buildConfiguration.Encoding.Encoding.Key, stoppingToken);
-
-            var encodingEntry = encoding.FindContentKey(buildConfiguration.Root);
-            var encodingKeys = encodingEntry.Keys; // Forced in order to go through async boundary.
-
-            for (var i = 0; i < encodingKeys.Length; ++i)
-            {
-                var root = await rootRepository.Obtain(productCode, buildConfiguration.Root, encodingKeys[i], stoppingToken);
-                if (root != null)
-                    return (encoding, root);
-            }
-
-            return (encoding, null);
-
         }
     }
 }

@@ -81,7 +81,7 @@ namespace Blizztrack.Services
                 return default;
 
             var backendQuery = await ExecuteQuery(endpoints, resourceDescriptor, stoppingToken);
-            if (backendQuery.StatusCode != HttpStatusCode.OK)
+            if (backendQuery.StatusCode != HttpStatusCode.OK && backendQuery.StatusCode != HttpStatusCode.PartialContent)
                 return default;
 
             { // Create a stream from the local handle.
@@ -168,7 +168,7 @@ namespace Blizztrack.Services
             where T : class, IResourceParser<T>
         {
             // Look for this resource in the well known table.
-            // If it's well known, creeate a file on disk if it doesn't exist, decompressed the resource
+            // If it's well known, create a file on disk if it doesn't exist, decompressed the resource
             // in it, and call the decompressed loader. Otherwise, call the compressed loader.
             var knownResource = _databaseContext.KnownResources
                 .SingleOrDefault(e => e.EncodingKey.SequenceEqual(compressed.Archive));
@@ -296,7 +296,7 @@ namespace Blizztrack.Services
 
             var endpoints = GetEndpoints(descriptor.Product);
             var backendQuery = await ExecuteQuery(endpoints, descriptor, stoppingToken);
-            if (backendQuery.StatusCode != HttpStatusCode.OK)
+            if (backendQuery.StatusCode != HttpStatusCode.OK && backendQuery.StatusCode != HttpStatusCode.PartialContent)
                 return Stream.Null;
 
             return backendQuery.Body;

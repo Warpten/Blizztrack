@@ -1,10 +1,5 @@
-﻿using Blizztrack.Framework.TACT.Implementation;
-using Blizztrack.Shared.IO;
-
-using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
+﻿using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 
 namespace Blizztrack.Framework.TACT.Resources
 {

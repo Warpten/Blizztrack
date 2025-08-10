@@ -7,7 +7,6 @@ using System.Runtime.Intrinsics.Wasm;
 using System.Diagnostics;
 using System.Diagnostics.Contracts;
 using Blizztrack.Shared.Extensions;
-using Blizztrack.Shared;
 
 namespace Blizztrack.Framework.TACT
 {

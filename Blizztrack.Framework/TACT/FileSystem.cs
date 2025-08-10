@@ -1,11 +1,12 @@
 ﻿using Blizztrack.Framework.TACT.Implementation;
 using Blizztrack.Framework.TACT.Resources;
 
+using Pidgin;
+
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 
 using Encoding = Blizztrack.Framework.TACT.Implementation.Encoding;
-using Index = Blizztrack.Framework.TACT.Implementation.Index;
 
 namespace Blizztrack.Framework.TACT
 {
@@ -115,6 +116,19 @@ namespace Blizztrack.Framework.TACT
             // Assume the file is a self-contained archive
             return ResourceType.Data.ToDescriptor(_product, encodingKey);
         }
+
+        public string? GetCompressionSchema<K>(in K encodingKey) where K : IEncodingKey<K>, allows ref struct
+        {
+            if (_encoding is null)
+                return default;
+
+            var encodingSpec = _encoding.FindSpecification(encodingKey);
+            if (encodingSpec == default)
+                return default;
+
+            var parsedChunks = Specification._encodingSpecification.Parse(encodingSpec.GetSpecificationString(_encoding));
+            throw new NotImplementedException();
+        }
     }
 
     /// <summary>
@@ -157,12 +171,11 @@ namespace Blizztrack.Framework.TACT
     /// <param name="install"></param>
     /// <param name="fileIndex"></param>
     [Experimental("BT002")]
-    public class FileSystem<ArchiveIndexT, FileIndexT>(string product, ArchiveIndexT archiveIndices, Encoding? encoding = default, Root? root = default, Install? install = default, FileIndexT? fileIndex = default)
+    public class FileSystem<ArchiveIndexT>(string product, ArchiveIndexT archiveIndices, Encoding? encoding = default, Root? root = default, Install? install = default, IIndex? fileIndex = default)
         : IFileSystem
         where ArchiveIndexT : IIndex
-        where FileIndexT : IIndex
     {
-        private readonly BaseFileSystem<ArchiveIndexT, FileIndexT> _implementation = new(product, archiveIndices, encoding, root, install, fileIndex);
+        private readonly BaseFileSystem<ArchiveIndexT, IIndex> _implementation = new(product, archiveIndices, encoding, root, install, fileIndex);
 
         public ResourceDescriptor[] Open(string filePath) => _implementation.Open(filePath);
 

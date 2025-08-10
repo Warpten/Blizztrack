@@ -1,15 +1,19 @@
 ﻿
 using Blizztrack.Extensions;
+using Blizztrack.Framework.TACT;
 using Blizztrack.Framework.TACT.Configuration;
 using Blizztrack.Framework.TACT.Resources;
 using Blizztrack.Persistence;
 using Blizztrack.Persistence.Entities;
+using Blizztrack.Services.Caching;
+
+using Microsoft.EntityFrameworkCore;
 
 using System.Runtime.CompilerServices;
 
 namespace Blizztrack.Services.Hosted
 {
-    public class KnownFilesMonitorService(IServiceProvider serviceProvider) : BackgroundService
+    public class KnownFilesMonitorService(IServiceProvider serviceProvider, EncodingCache encodingRepository) : BackgroundService
     {
         private readonly IResourceLocator _resourceLocator = serviceProvider.GetRequiredService<IResourceLocator>();
         private readonly MediatorService _mediatorService = serviceProvider.GetRequiredService<MediatorService>();
@@ -36,19 +40,42 @@ namespace Blizztrack.Services.Hosted
                 {
                     var buildConfiguration = await buildTask;
 
-                    var entity = databaseContext.KnownResources.SingleOrDefault(e => e.EncodingKey == buildConfiguration.Encoding.Encoding.Key);
-                    if (entity != null)
-                        continue;
-
-                    databaseContext.KnownResources.Add(new KnownResource()
+                    if (!databaseContext.KnownResources.Any(e => e.EncodingKey.SequenceEqual(buildConfiguration.Encoding.Encoding.Key)))
                     {
-                        ContentKey = buildConfiguration.Encoding.Content.Key,
-                        EncodingKey = buildConfiguration.Encoding.Encoding.Key,
-                        Specification = "",
-                    });
+                        databaseContext.KnownResources.Add(new KnownResource()
+                        {
+                            Kind = "Encoding",
+                            ContentKey = buildConfiguration.Encoding.Content.Key,
+                            EncodingKey = buildConfiguration.Encoding.Encoding.Key,
+                            Specification = "",
+                        });
+
+                        // Needs to be flushed to the database instantly
+                        databaseContext.SaveChanges();
+                    }
+
+                    // Update well-known root ekey/ckey pairs
+                    if (!databaseContext.KnownResources.Any(e => e.ContentKey.SequenceEqual(buildConfiguration.Root)))
+                    {
+                        var encoding = await encodingRepository.Obtain(product, buildConfiguration.Encoding.Content.Key, buildConfiguration.Encoding.Encoding.Key, stoppingToken);
+
+                        var rootEntry = encoding.FindContentKey(buildConfiguration.Root);
+                        if (rootEntry)
+                        {
+                            for (var i = 0; i < rootEntry.Count; ++i)
+                            {
+                                databaseContext.KnownResources.Add(new KnownResource()
+                                {
+                                    Kind = "Root",
+                                    ContentKey = buildConfiguration.Root,
+                                    EncodingKey = rootEntry[i].AsOwned(),
+                                    Specification = "",
+                                });
+                            }
+                        }
+                    }
                 }
 
-                databaseContext.SaveChanges();
             }
         }
     }

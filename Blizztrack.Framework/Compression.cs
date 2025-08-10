@@ -148,9 +148,6 @@ namespace Blizztrack.Framework
 
         public bool Decompress(ReadOnlySpan<byte> input, Span<byte> output, int discardOutput = 0, int windowBits = 15)
         {
-            if (discardOutput == 0)
-                return Decompress(input, output, windowBits);
-
             Stream stream = new (input, output);
             var returnCode = InitializeInflate(ref stream, windowBits);
             
@@ -161,7 +158,7 @@ namespace Blizztrack.Framework
             {
                 // Start by discarding the front of the output
                 var discardBuffer = GC.AllocateUninitializedArray<byte>(2048);
-                var discardSpan = discardBuffer.AsSpan()[Math.Min(2048, discardOutput)..];
+                var discardSpan = discardBuffer.AsSpan(Math.Min(2048, discardOutput));
 
                 // Discard as many bytes as required.
                 while (discardOutput > 0 && returnCode != Z_STREAM_END)

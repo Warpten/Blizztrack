@@ -30,6 +30,11 @@ namespace Blizztrack.Persistence.Translators
                     null);
             }
 
+            if (method.Name == nameof(IKey.SequenceEqual) && instance != null)
+            {
+                return _sqlExpressionFactory.Equal(instance, arguments[0]);
+            }
+
             return null;
         }
     }

@@ -42,7 +42,7 @@ namespace Blizztrack.Framework.TACT.Configuration
                         archives = value.AsKeyString<EncodingKey>((byte)' ');
                     else if (property.SequenceEqual("file-index"u8))
                         fileIndex = value.AsKeyString<EncodingKey>();
-                    else if (property.SequenceEqual("file-inbdex-size"u8))
+                    else if (property.SequenceEqual("file-index-size"u8))
                         fileIndexSize = long.Parse(value);
                     else if (property.SequenceEqual("archive-group"u8))
                         archiveGroup = value.AsKeyString<EncodingKey>();

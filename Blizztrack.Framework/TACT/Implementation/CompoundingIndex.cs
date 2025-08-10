@@ -41,16 +41,28 @@ namespace Blizztrack.Framework.TACT.Implementation
 
         public Entry FindEncodingKey<T>(in T encodingKey) where T : notnull, IEncodingKey<T>, allows ref struct
         {
-            var archiveIndex = encodingKey[0];
-            for (var i = 1; i < encodingKey.Length / 2 + 1; ++i)
-                archiveIndex ^= encodingKey[i];
+            // Not valid for TACT ... Or is it?
+            // var archiveIndex = encodingKey[0];
+            // for (var i = 1; i < encodingKey.Length / 2 + 1; ++i)
+            //     archiveIndex ^= encodingKey[i];
+            // 
+            // archiveIndex = (byte)((archiveIndex & 0xF) ^ (archiveIndex >> 4));
+            // if (archiveIndex > _indices.Length)
+            //     return default;
+            // 
+            // ref var containingIndex = ref _indices.UnsafeIndex(archiveIndex);
+            // return containingIndex.FindEncodingKey(encodingKey);
 
-            archiveIndex = (byte)((archiveIndex & 0xF) | (archiveIndex >> 4));
-            if (archiveIndex > _indices.Length)
-                return default;
+            for (var i = 0; i < _indices.Length; ++i)
+            {
+                ref var containingIndex = ref _indices.UnsafeIndex(i);
 
-            ref var containingIndex = ref _indices.UnsafeIndex(archiveIndex);
-            return containingIndex.FindEncodingKey(encodingKey);
+                var entry = containingIndex.FindEncodingKey(encodingKey);
+                if (entry != default)
+                    return entry;
+            }
+
+            return default;
         }
     }
 }

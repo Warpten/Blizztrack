@@ -1,9 +1,7 @@
 ﻿using Blizztrack.Framework.TACT.Implementation;
 using Blizztrack.Shared.IO;
 
-using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
-using System.IO.MemoryMappedFiles;
 using System.Runtime.CompilerServices;
 
 namespace Blizztrack.Framework.TACT.Resources
@@ -31,7 +29,7 @@ namespace Blizztrack.Framework.TACT.Resources
         /// <returns>An implementation of <see cref="ISpanSource"/>.</returns>
         /// <remarks>This function should only be used with implementations of <see cref="IResourceParser{T}"/>.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public MappedDataSource ToMappedDataSource() => new(Path);
+        public MappedDataSource ToMappedDataSource() => new(Path, Offset, Length);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Stream ToStream()

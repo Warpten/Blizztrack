@@ -53,7 +53,6 @@ namespace Blizztrack.API
             If a HEAD request is issued, this endpoint instead returns a list of metadata for the resource
             as part of the response headers.
             """)]
-            
         public async Task<IResult> OpenFileDataID(
             [Description("The product code.")] string productCode,
             [Description("The build configuration hash.")] BoundEncodingKey buildConfiguration,
@@ -174,7 +173,7 @@ namespace Blizztrack.API
             {
                 var dataStream = await resourceLocator.OpenStream(descriptor, stoppingToken);
                 if (dataStream != Stream.Null)
-                    return TypedResults.Ok(dataStream);
+                    return TypedResults.Stream(await BLTE.Parse(dataStream, stoppingToken: stoppingToken));
             }
 
             return TypedResults.NotFound();
@@ -196,7 +195,7 @@ namespace Blizztrack.API
 
             var dataStream = await resourceLocator.OpenStream(descriptor, stoppingToken);
             if (dataStream != Stream.Null)
-                return TypedResults.Ok(dataStream);
+                return TypedResults.Stream(await BLTE.Parse(dataStream, stoppingToken: stoppingToken));
 
             return TypedResults.NotFound();
         }
@@ -221,7 +220,7 @@ namespace Blizztrack.API
             {
                 var dataStream = await resourceLocator.OpenStream(descriptor, stoppingToken);
                 if (dataStream != Stream.Null)
-                    return TypedResults.Ok(dataStream);
+                    return TypedResults.Stream(await BLTE.Parse(dataStream, stoppingToken: stoppingToken));
             }
 
             return TypedResults.NotFound();

@@ -5,7 +5,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
-using System.Text;
+using System.Buffers.Binary;
 
 namespace Blizztrack.Framework.TACT.Implementation
 {
@@ -77,6 +77,12 @@ namespace Blizztrack.Framework.TACT.Implementation
         public static byte[] Parse(ResourceHandle resourceHandle, long decompressedSize = 0)
             => ParseSchema(resourceHandle, decompressedSize).Execute(resourceHandle);
 
+        public static async Task<MemoryStream> Parse(Stream sourceStream, long decompressedSize = 0, CancellationToken stoppingToken = default)
+        {
+            var schema = await ParseSchema(sourceStream, decompressedSize, stoppingToken);
+            return await schema.Execute(sourceStream, stoppingToken);
+        }
+
         /// <summary>
         /// Executes the current schema over the provided resource, returning a new byte buffer containing the decompressed file.
         /// </summary>
@@ -92,11 +98,46 @@ namespace Blizztrack.Framework.TACT.Implementation
             for (var i = 0; i < _chunks.Length; ++i)
             {
                 ref var currentChunk = ref _chunks[i];
-                // Parse the chunk, without discarding any byte.
-                currentChunk.Parser(inputData[currentChunk.Compressed], dataBuffer.AsSpan()[currentChunk.Decompressed], 0);
+                currentChunk.Parser(inputData[currentChunk.Compressed], dataBuffer.AsSpan(currentChunk.Decompressed), 0);
             }
 
             return dataBuffer;
+        }
+
+        public async Task<MemoryStream> Execute(Stream sourceStream, CancellationToken stoppingToken = default)
+        {
+            var decompressedSize = _chunks[^1].Decompressed.End.Value;
+
+            var outputBuffer = GC.AllocateUninitializedArray<byte>(decompressedSize);
+
+            for (var i = 0; i < _chunks.Length; ++i)
+            {
+                var compressedChunkSize = _chunks[i].CompressedSize;
+                var decompressedChunkEnd = _chunks[i].Decompressed.End.Value;
+                var outputRange = _chunks[i].Compressed;
+
+                var inputBuffer = getInputBuffer(compressedChunkSize, decompressedChunkEnd, outputBuffer, decompressedSize);
+                await sourceStream.ReadExactlyAsync(inputBuffer, stoppingToken);
+
+                // And now decompress
+                unsafe
+                {
+                    _chunks[i].Parser(inputBuffer.Span, outputBuffer[outputRange], 0);
+                }
+            }
+
+            return new MemoryStream(outputBuffer);
+
+            static Memory<byte> getInputBuffer(int compressedChunkSize, int decompressedChunkEnd, byte[] outputBuffer, long decompressedSize)
+            {
+                // If there is enough space right after this chunk's decompressed data for the compressed data,
+                // use that space as a scrap buffer to save an allocation
+                if (compressedChunkSize + decompressedChunkEnd <= decompressedSize)
+                    return new ArraySegment<byte>(outputBuffer, decompressedChunkEnd, compressedChunkSize);
+                
+                // Otherwise, allocate a temporary buffer
+                return GC.AllocateUninitializedArray<byte>(compressedChunkSize);
+            }
         }
 
         /// <summary>
@@ -188,6 +229,23 @@ namespace Blizztrack.Framework.TACT.Implementation
             return new (flags, chunks);
         }
 
+        public static async ValueTask<BLTE> ParseSchema(Stream sourceStream, long decompressedSize = 0, CancellationToken stoppingToken = default)
+        {
+            // Manually reconstruct a complete header.
+            var fileStart = new byte[8];
+            await sourceStream.ReadExactlyAsync(fileStart, stoppingToken);
+
+            if (BinaryPrimitives.ReadUInt32LittleEndian(fileStart) != 0x45544C42u)
+                throw new InvalidOperationException("The provided stream does not encapsulate a BLTE resource.");
+
+            var headerSize = BinaryPrimitives.ReadInt32BigEndian(fileStart.AsSpan(4));
+
+            var fileHeader = GC.AllocateUninitializedArray<byte>(headerSize);
+            Buffer.BlockCopy(fileStart, 0, fileHeader, 0, 8);
+            await sourceStream.ReadExactlyAsync(fileHeader.AsMemory(8), stoppingToken);
+
+            return ParseSchema(fileHeader, decompressedSize);
+        }
 
         /// <summary>
         /// Attempts to parse a BLTE schema out of the given span. 

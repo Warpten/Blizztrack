@@ -13,6 +13,11 @@ namespace Blizztrack.Persistence.Entities
         public uint ID { get; set; }
 
         /// <summary>
+        /// A displayable string that specifies what kind of known resource this is.
+        /// </summary>
+        public required string Kind { get; set; }
+
+        /// <summary>
         /// The encoding key used to identify the compressed file.
         /// </summary>
         public EncodingKey EncodingKey { get; set; }

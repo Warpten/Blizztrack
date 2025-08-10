@@ -4,7 +4,6 @@ using Blizztrack.Shared.IO;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Runtime.InteropServices.Marshalling;
 
 namespace Blizztrack.Framework.TACT.Implementation
 {
@@ -16,8 +15,9 @@ namespace Blizztrack.Framework.TACT.Implementation
             delegate*<ReadOnlySpan<byte>, int, int, int, ReadOnlySpan<EncodingKey>, IIndex.Entry> recordParser = footer.OffsetBytes switch
             {
                 6 => &Shared.ParseGroupIndex,
-                5 => &Shared.ParseFileIndex,
-                _ => &Shared.ParseArchiveIndex
+                0 => &Shared.ParseFileIndex,
+                4 => &Shared.ParseArchiveIndex,
+                _ => throw new UnreachableException()
             };
 
             return new Index<T>(dataSource, footer, recordParser, keys);
@@ -50,8 +50,9 @@ namespace Blizztrack.Framework.TACT.Implementation
             _pageSize = footer.PageSize << 10;
             _entrySize = footer.KeyBytes + footer.SizeBytes + footer.OffsetBytes;
             _entriesPerPage = _pageSize / _entrySize;
+
+            _pageCount = (int)Math.Ceiling((double)footer.NumElements / _entriesPerPage);
             _entriesLastPage = footer.NumElements - (_pageCount - 1) * _entriesPerPage;
-            _pageCount = (int) Math.Ceiling((double)footer.NumElements / _entriesPerPage);
 
             _keys = archiveKeys;
             Count = footer.NumElements;
@@ -185,7 +186,7 @@ namespace Blizztrack.Framework.TACT.Implementation
             var key = data[..keyBytes].AsKey<EncodingKeyRef>();
             var encodedSize = data[keyBytes..].ReadInt32BE();
 
-            return new(key, -1, encodedSize, EncodingKey.Zero);
+            return new(key, 0, encodedSize, key.AsOwned());
         }
 
         public unsafe static IIndex.Entry ParseArchiveIndex(ReadOnlySpan<byte> data, int keyBytes, int offsetBytes, int sizeBytes, ReadOnlySpan<EncodingKey> archiveKeys)

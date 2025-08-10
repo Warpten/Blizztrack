@@ -78,7 +78,7 @@ namespace Blizztrack.API
                 return keys;
             }
 
-            public record KeySpec(string Key, string Specification);
+            public record struct KeySpec(string Key, string Specification);
         }
     }
 }
