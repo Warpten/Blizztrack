@@ -3,6 +3,7 @@ using Blizztrack.Framework.TACT.Resources;
 
 using Pidgin;
 
+using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 
@@ -15,6 +16,8 @@ namespace Blizztrack.Framework.TACT
     /// </summary>
     public interface IFileSystem
     {
+        public string? GetCompressionSpec<K>(K encodingKey) where K : IEncodingKey<K>, allows ref struct;
+
         /// <summary>
         /// Retrieves every resource descriptor that corresponds to a given file path.
         /// </summary>
@@ -40,10 +43,11 @@ namespace Blizztrack.Framework.TACT
         /// <summary>
         /// Retrieves a resource descriptor that corresponds to a given encoding key.
         /// </summary>
-        /// <typeparam name="K">The concrete type of encoding key used.</typeparam>
-        /// <param name="contentKey">The encoding key to look for.</param>
+        /// <typeparam name="E">The concrete type of encoding key used.</typeparam>
+        /// <param name="encodingKey">The encoding key to look for.</param>
         /// <returns>A resource descriptor.</returns>
-        public ResourceDescriptor OpenEncodingKey<T>(in T encodingKey) where T : IEncodingKey<T>, allows ref struct;
+        public ResourceDescriptor OpenEncodingKey<E>(in E encodingKey)
+            where E : IEncodingKey<E>, allows ref struct;
     }
 
     internal readonly struct BaseFileSystem<AT, FT>(string product, AT archiveIndices, Encoding? encoding = default, Root? root = default, Install? install = default, FT? fileIndex = default)
@@ -81,7 +85,7 @@ namespace Blizztrack.Framework.TACT
             if (Unsafe.IsNullRef(in rootResult))
                 return [];
 
-            return OpenContentKey(rootResult.ContentKey.AsReadOnlySpan().AsKey<ContentKeyRef>());
+            return OpenContentKey(new ContentKeyRef(rootResult.ContentKey));
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -91,33 +95,40 @@ namespace Blizztrack.Framework.TACT
 
             var results = new ResourceDescriptor[encodingResult.Count];
             for (var i = 0; i < encodingResult.Count; ++i)
-                results[i] = OpenEncodingKey(encodingResult[i]);
+                results[i] = OpenEncodingKey(encodingResult[i], contentKey);
 
             return results;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ResourceDescriptor OpenEncodingKey<K>(in K encodingKey) where K : IEncodingKey<K>, allows ref struct
+        public ResourceDescriptor OpenEncodingKey<E>(in E encodingKey)
+            where E : notnull, IEncodingKey<E>, allows ref struct
+            => OpenEncodingKey(in encodingKey, ContentKey.Zero);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public ResourceDescriptor OpenEncodingKey<E, C>(in E encodingKey, C contentKey)
+            where E : notnull, IEncodingKey<E>, allows ref struct
+            where C : notnull, IContentKey<C>, allows ref struct
         {
             if (_fileIndex is not null)
             {
                 // Try non-archived files
                 var indexResult = _fileIndex.FindEncodingKey(in encodingKey);
                 if (indexResult)
-                    return ResourceType.Data.ToDescriptor(_product, indexResult.Archive, indexResult.Offset, indexResult.Length);
+                    return ResourceType.Data.ToDescriptor(_product, indexResult.Archive, encodingKey, contentKey, indexResult.Offset, indexResult.Length);
             }
 
             {
                 var indexResult = _archives.FindEncodingKey(in encodingKey);
                 if (indexResult)
-                    return ResourceType.Data.ToDescriptor(_product, indexResult.Archive, indexResult.Offset, indexResult.Length);
+                    return ResourceType.Data.ToDescriptor(_product, indexResult.Archive, encodingKey, contentKey, indexResult.Offset, indexResult.Length);
             }
 
             // Assume the file is a self-contained archive
             return ResourceType.Data.ToDescriptor(_product, encodingKey);
         }
 
-        public string? GetCompressionSchema<K>(in K encodingKey) where K : IEncodingKey<K>, allows ref struct
+        public string? GetCompressionSpec<K>(in K encodingKey) where K : IEncodingKey<K>, allows ref struct
         {
             if (_encoding is null)
                 return default;
@@ -126,8 +137,7 @@ namespace Blizztrack.Framework.TACT
             if (encodingSpec == default)
                 return default;
 
-            var parsedChunks = Specification._encodingSpecification.Parse(encodingSpec.GetSpecificationString(_encoding));
-            throw new NotImplementedException();
+            return encodingSpec.GetSpecificationString(_encoding);
         }
     }
 
@@ -154,6 +164,9 @@ namespace Blizztrack.Framework.TACT
 
         public ResourceDescriptor OpenEncodingKey<K>(in K encodingKey) where K : IEncodingKey<K>, allows ref struct
             => _implementation.OpenEncodingKey(in encodingKey);
+
+        public string? GetCompressionSpec<K>(K encodingKey) where K : IEncodingKey<K>, allows ref struct
+            => _implementation.GetCompressionSpec(in encodingKey);
     }
 
     /// <summary>
@@ -187,5 +200,8 @@ namespace Blizztrack.Framework.TACT
 
         public ResourceDescriptor OpenEncodingKey<K>(in K encodingKey) where K : IEncodingKey<K>, allows ref struct
             => _implementation.OpenEncodingKey(in encodingKey);
+
+        public string? GetCompressionSpec<K>(K encodingKey) where K : IEncodingKey<K>, allows ref struct
+            => _implementation.GetCompressionSpec<K>(in encodingKey);
     }
 }

@@ -26,7 +26,7 @@ namespace Blizztrack.Framework.Extensions
         /// <param name="memberOffset">The offset, in bytes, at which the member is located.</param>
         /// <returns>A managed pointer to the member of type <typeparamref name="U" /> living at <paramref name="memberOffset" /> within <typeparamref name="T"/>.</returns>
         [Experimental(diagnosticId: "BT666"), MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static unsafe ref U UnsafeAcquireField<U, T>(ref T @object, int memberOffset) where T : struct
+        public static unsafe ref U UnsafeAcquireField<U, T>(scoped ref T @object, int memberOffset) where T : struct
         {
             var rawPointer = *(nint*)Unsafe.AsPointer(ref @object);
             return ref Unsafe.AsRef<U>((byte*)rawPointer + memberOffset);

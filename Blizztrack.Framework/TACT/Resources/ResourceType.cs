@@ -1,66 +1,125 @@
-﻿using System.Diagnostics.CodeAnalysis;
+﻿using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 
 namespace Blizztrack.Framework.TACT.Resources
 {
-    /// <summary>
-    /// A resource type.
-    /// </summary>
-    public readonly struct ResourceType : IEquatable<ResourceType>
+    file static class Shared
     {
-        private readonly int _index;
-        private readonly string _remotePath;
-        private readonly string _localPath;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static string Format(string formatString, string archiveName)
+            => string.Format(formatString, archiveName[0..2], archiveName[2..4], archiveName);
+    }
 
-        private ResourceType(int index, string remotePath, string localPath)
+    internal readonly struct ResourceTypeImpl
+    {
+        internal static readonly ResourceTypeImpl _config;
+        internal static readonly ResourceTypeImpl _indice;
+        internal static readonly ResourceTypeImpl _data;
+        internal static readonly ResourceTypeImpl _decompressed;
+
+        private readonly int _identity;
+        private readonly string _localPath;
+        private readonly string _remotePath;
+
+        internal ResourceTypeImpl(int identity, string remotePath, string localPath)
         {
-            _index = index;
-            _remotePath = remotePath;
+            _identity = identity;
             _localPath = localPath;
+            _remotePath = remotePath;
         }
 
-        private ResourceType(int index, string path) : this(index, path, path) { }
+        internal ResourceTypeImpl(int identity, string path) : this(identity, path, path) { }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal string FormatLocal<K>(K key) where K : IKey<K>, allows ref struct => Format(_localPath, key.AsHexString());
+        public string FormatLocal<K>(K key) where K : IKey<K>, allows ref struct => Shared.Format(_localPath, key.AsHexString());
+        public string FormatRemote<K>(K key) where K : IKey<K>, allows ref struct => Shared.Format(_remotePath, key.AsHexString());
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal string FormatRemote<K>(K key) where K : IKey<K>, allows ref struct => Format(_remotePath, key.AsHexString());
+        static ResourceTypeImpl()
+        {
+            _config = new(0, "config/{0}/{1}/{2}");
+            _indice = new(1, "data/{0}/{1}/{2}.index", "indices/{0}/{1}/{2}");
+            _data = new(2, "data/{0}/{1}/{2}");
+            _decompressed = new(3, "data/{0}/{1}/{2}", "decompressed/{0}/{1}/{2}");
+        }
+    }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static string Format(string formatString, string archiveName)
-            => string.Format(formatString, archiveName[0..2], archiveName[2..4], archiveName);
-
-        public ResourceDescriptor ToDescriptor<K>(string productCode, K key, long offset = 0, long length = 0)
-            where K : IKey<K>, allows ref struct
-            => new (this, productCode, key.AsSpan(), offset, length);
-
+    public readonly struct ResourceType
+    {
+        static ResourceType()
+        {
+            Config = new (ResourceTypeImpl._config);
+            Data = new(ResourceTypeImpl._data);
+            Indice = new(ResourceTypeImpl._indice);
+            Decompressed = new(ResourceTypeImpl._decompressed);
+        }
+        
         /// <summary>
         /// The resource is a configuration file.
         /// </summary>
-        public static readonly ResourceType Config = new(0, "config/{0}/{1}/{2}");
+        public static readonly EncodingResourceType Config;
 
         /// <summary>
         /// The resource is an archive.
         /// </summary>
-        public static readonly ResourceType Data = new(1, "data/{0}/{1}/{2}");
+        public static readonly EncodingResourceType Data;
 
         /// <summary>
         /// The resource is an archive index.
         /// </summary>
-        public static readonly ResourceType Indice = new(2, "data/{0}/{1}/{2}.index", "indices/{0}/{1}/{2}");
+        public static readonly EncodingResourceType Indice;
 
         /// <summary>
         /// Technically not a true resource type; this type denotes files that have been locally
         /// cached on disk after decompression.
         /// </summary>
-        public static readonly ResourceType Decompressed = new(3, "data/{0}/{1}/{2}", "decompressed/{0}/{1}/{2}");
+        public static readonly ContentResourceType Decompressed;
+    }
 
-        public static bool operator ==(ResourceType lhs, ResourceType rhs) => lhs._index == rhs._index;
-        public static bool operator !=(ResourceType lhs, ResourceType rhs) => lhs._index != rhs._index;
+    /// <summary>
+    /// A resource type.
+    /// </summary>
+    public readonly struct EncodingResourceType
+    {
+        internal readonly ResourceTypeImpl _identity;
 
-        public override bool Equals([NotNullWhen(true)] object? obj) => obj is ResourceType other && Equals(other);
-        public bool Equals(ResourceType other) => other._index == _index;
-        public override int GetHashCode() => _index;
+        internal EncodingResourceType(in ResourceTypeImpl identity) => _identity = identity;
+
+        public ResourceDescriptor ToDescriptor<E, C, A>(string productCode, A archiveKey, E encodingKey, C contentKey, long offset, long length)
+            where E : IEncodingKey<E>, allows ref struct
+            where C : IContentKey<C>, allows ref struct
+            where A : IEncodingKey<A>, allows ref struct
+            => new(_identity, productCode, new(archiveKey.AsSpan()), offset, length)
+            {
+                EncodingKey = new(encodingKey.AsSpan()),
+                ContentKey = new(contentKey.AsSpan())
+            };
+
+        public ResourceDescriptor ToDescriptor<A>(string productCode, A archiveKey, long offset = 0, long length = 0)
+            where A : IEncodingKey<A>, allows ref struct
+            => ToDescriptor(productCode, archiveKey, archiveKey, ContentKey.Zero, offset, length);
+
+        public ResourceDescriptor ToDescriptor<A, C>(string productCode, A archiveKey, C contentKey, long offset = 0, long length = 0)
+            where A : IEncodingKey<A>, allows ref struct
+            where C : IContentKey<C>, allows ref struct
+            => ToDescriptor(productCode, archiveKey, archiveKey, contentKey, offset, length);
+    }
+
+    /// <summary>
+    /// This resource type expects content keys.
+    /// </summary>
+    public readonly struct ContentResourceType
+    {
+        internal readonly ResourceTypeImpl _identity;
+
+        internal ContentResourceType(in ResourceTypeImpl identity) => _identity = identity;
+        
+        public readonly ResourceDescriptor ToDescriptor<C, A>(string productCode, A archiveKey, C contentKey, long offset = 0, long length = 0)
+            where C : IContentKey<C>, allows ref struct
+            where A : IEncodingKey<A>, allows ref struct
+            => new(_identity, productCode, new(contentKey.AsSpan()), offset, length)
+            {
+                EncodingKey = new(archiveKey.AsSpan()),
+                ContentKey = new(contentKey.AsSpan())
+            };  
     }
 }

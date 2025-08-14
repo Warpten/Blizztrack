@@ -1,4 +1,5 @@
-﻿using Blizztrack.Framework.TACT.Resources;
+﻿using Blizztrack.Framework.Extensions;
+using Blizztrack.Framework.TACT.Resources;
 using Blizztrack.Shared.Extensions;
 using Blizztrack.Shared.IO;
 
@@ -12,8 +13,6 @@ using static Blizztrack.Framework.TACT.Implementation.Install;
 
 namespace Blizztrack.Framework.TACT.Implementation
 {
-    // TODO: Clean up this file
-
     /// <summary>
     /// This object describes a specific BLTE schema.
     /// 
@@ -75,7 +74,14 @@ namespace Blizztrack.Framework.TACT.Implementation
             Flags = flags;
         }
 
-        public static async Task<BLTE> Parse(Stream sourceStream, string specification, CancellationToken stoppingToken = default)
+        #region Stream support
+        public static async Task<MemoryStream> Execute(Stream sourceStream, string? specification, int decompressedSize = 0, CancellationToken stoppingToken = default)
+        {
+            var schema = await ParseSchema(sourceStream, specification, decompressedSize, stoppingToken);
+            return await schema.Execute(sourceStream, stoppingToken);
+        }
+
+        public static async Task<BLTE> ParseSchema(Stream sourceStream, string? specification, int decompressedSize = 0, CancellationToken stoppingToken = default)
         {
             // 1. Read the top of the file.
             var dataBuffer = new byte[8];
@@ -89,19 +95,114 @@ namespace Blizztrack.Framework.TACT.Implementation
             // 2. Construct a complete header
             var fileHeader = GC.AllocateUninitializedArray<byte>(headerSize);
             Buffer.BlockCopy(dataBuffer, 0, fileHeader, 0, 8);
-            await sourceStream.ReadExactlyAsync(dataBuffer.AsMemory(8), stoppingToken);
+            await sourceStream.ReadExactlyAsync(fileHeader.AsMemory(8), stoppingToken);
 
             // 3. Parse the header.
-            var dataSource = dataBuffer.ToDataSource();
+            var dataSource = fileHeader.ToDataSource();
             var (flags, chunks, encodingKey) = ParseHeader(dataSource, 0, 0);
 
             // 4. Read the spec string.
-            var chunkSpec = Spec.Parse(specification);
+            if (specification is not null)
+            {
+                var chunkSpec = Spec.Parse(specification);
 
-            // 5. Update chunks with the compression modes.
-            throw new NotImplementedException();
+                // 5. Update chunks with the compression modes.
+                var visitor = new SpecVisitor(chunks.AsBackingArray(), headerSize);
+
+                chunkSpec.Accept(visitor, (int)sourceStream.Length - headerSize, headerSize);
+            }
+
+            Debug.Assert(decompressedSize == 0 || decompressedSize == chunks[^1].Decompressed.End.Value);
+            return new BLTE(flags, chunks[^1].Decompressed.End.Value, [.. chunks]);
         }
 
+        private delegate void DegradedChunkCorrector(ref ChunkInfo _, byte __);
+
+        public async Task<MemoryStream> Execute(Stream sourceStream, CancellationToken stoppingToken = default)
+        {
+            var outputBuffer = GC.AllocateUninitializedArray<byte>(_decompressedSize);
+
+            DegradedChunkCorrector corrector = isDegraded(ref _chunks[0]) ? updateChunk : noOp;
+
+            for (var i = 0; i < _chunks.Length; ++i)
+            {
+                var compressedChunkSize = _chunks[i].CompressedSize + 1;
+                var decompressedChunkEnd = _chunks[i].Decompressed.End.Value;
+                var outputRange = _chunks[i].Decompressed;
+
+                var inputBuffer = getInputBuffer(compressedChunkSize, decompressedChunkEnd, outputBuffer, _decompressedSize);
+                await sourceStream.ReadExactlyAsync(inputBuffer, stoppingToken);
+
+                unsafe {
+                    var dataSpan = inputBuffer.Span;
+                    corrector(ref _chunks[i], dataSpan[0]);
+
+                    _chunks[i].Parser(dataSpan[1..], outputBuffer.AsSpan(outputRange), 0);
+                }
+            }
+
+            return new MemoryStream(outputBuffer);
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            static unsafe bool isDegraded(ref ChunkInfo chunk) => chunk.Parser is null;
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            static unsafe void noOp(ref ChunkInfo _, byte __) { }
+
+            static unsafe void updateChunk(ref ChunkInfo chunk, byte compressionByte)
+                => chunk.Parser = compressionByte switch {
+                    (byte)'N' => &ParseImmediate,
+                    (byte)'Z' => &ParseImmediate,
+                    _ => throw new NotImplementedException(),
+                };
+
+            static Memory<byte> getInputBuffer(int compressedChunkSize, int decompressedChunkEnd, byte[] outputBuffer, long decompressedSize)
+            {
+                // If there is enough space right after this chunk's decompressed data for the compressed data,
+                // use that space as a scrap buffer to save an allocation
+                if (compressedChunkSize + decompressedChunkEnd <= decompressedSize)
+                    return new ArraySegment<byte>(outputBuffer, decompressedChunkEnd, compressedChunkSize);
+
+                // Otherwise, allocate a temporary buffer
+                return GC.AllocateUninitializedArray<byte>(compressedChunkSize);
+            }
+        }
+
+        private ref struct SpecVisitor(Span<ChunkInfo> chunks, int headerSize) : Spec.IVisitor
+        {
+            private readonly Span<ChunkInfo> _chunks = chunks;
+            private int _chunkIndex = 0;
+            private int _compressedCursor = headerSize;
+
+            public void BeginEncryption(string key, string iv)
+                => throw new NotImplementedException("Encrypted BLTEs are not supported.");
+            
+            public void EndEncryption()
+                => throw new NotImplementedException("Encrypted BLTEs are not supported.");
+
+            public unsafe void OnCompressedChunk(int level, int windowBits, int chunkSize)
+            {
+                // We don't handle compression parameters because the stream provides it to us.
+                _chunks[_chunkIndex].Parser = &ParseCompressed;
+                UpdateCompressedRange(chunkSize);
+            }
+
+            public unsafe void OnRawChunk(int chunkSize)
+            {
+                _chunks[_chunkIndex].Parser = &ParseImmediate;
+                UpdateCompressedRange(chunkSize);
+            }
+
+            private void UpdateCompressedRange(int chunkSize)
+            {
+                // Unsafe.AsRef(in _chunks[_chunkIndex].Compressed) = new Range(_compressedCursor + 1, _compressedCursor - 1 + chunkSize);
+
+                _compressedCursor += 1 + chunkSize;
+                ++_chunkIndex;
+            }
+        }
+        #endregion
+
+        #region Resource handle support
         /// <summary>
         /// Parses the given resource according to its schema and returns an in-memory buffer.
         /// </summary>
@@ -111,11 +212,23 @@ namespace Blizztrack.Framework.TACT.Implementation
         public static byte[] Parse(ResourceHandle resourceHandle, long decompressedSize = 0)
             => ParseSchema(resourceHandle, decompressedSize).Execute(resourceHandle);
 
-        [Obsolete("Use BLTE.Parse(Stream, string, CancellationToken) instead.")]
-        public static async Task<MemoryStream> Parse(Stream sourceStream, long decompressedSize = 0, CancellationToken stoppingToken = default)
+
+        /// <summary>
+        /// Attempts to parse a BLTE schema out of the given span. 
+        /// </summary>
+        /// <typeparam name="K">The type of encoding key.</typeparam>
+        /// <param name="resourceHandle">A handle over a resource.</param>
+        /// <param name="decompressedSize">The expected decompressed size of the file. If zero, this parameter is ignored</param>
+        /// <remarks>
+        /// If the checksum calculated does not match <paramref name="encodingKey"/>, <see langword="default" /> is returned.
+        /// If the decompressed size does not match <paramref name="decompressedSize"/>, <see langword="default"/> is returned.
+        /// </remarks>
+        /// <returns>A schema that can then be used to parse a file.</returns>
+        public unsafe static BLTE ParseSchema(ResourceHandle resourceHandle, long decompressedSize = 0)
         {
-            var schema = await ParseSchema(sourceStream, decompressedSize, stoppingToken);
-            return await schema.Execute(sourceStream, stoppingToken);
+            using var memoryManager = resourceHandle.ToMappedDataSource();
+
+            return ParseSchema(memoryManager[..], decompressedSize);
         }
 
         /// <summary>
@@ -137,40 +250,7 @@ namespace Blizztrack.Framework.TACT.Implementation
 
             return dataBuffer;
         }
-
-        public async Task<MemoryStream> Execute(Stream sourceStream, CancellationToken stoppingToken = default)
-        {
-            var outputBuffer = GC.AllocateUninitializedArray<byte>(_decompressedSize);
-
-            for (var i = 0; i < _chunks.Length; ++i)
-            {
-                var compressedChunkSize = _chunks[i].CompressedSize;
-                var decompressedChunkEnd = _chunks[i].Decompressed.End.Value;
-                var outputRange = _chunks[i].Compressed;
-
-                var inputBuffer = getInputBuffer(compressedChunkSize, decompressedChunkEnd, outputBuffer, _decompressedSize);
-                await sourceStream.ReadExactlyAsync(inputBuffer, stoppingToken);
-
-                // And now decompress
-                unsafe
-                {
-                    _chunks[i].Parser(inputBuffer.Span, outputBuffer[outputRange], 0);
-                }
-            }
-
-            return new MemoryStream(outputBuffer);
-
-            static Memory<byte> getInputBuffer(int compressedChunkSize, int decompressedChunkEnd, byte[] outputBuffer, long decompressedSize)
-            {
-                // If there is enough space right after this chunk's decompressed data for the compressed data,
-                // use that space as a scrap buffer to save an allocation
-                if (compressedChunkSize + decompressedChunkEnd <= decompressedSize)
-                    return new ArraySegment<byte>(outputBuffer, decompressedChunkEnd, compressedChunkSize);
-                
-                // Otherwise, allocate a temporary buffer
-                return GC.AllocateUninitializedArray<byte>(compressedChunkSize);
-            }
-        }
+        #endregion
 
         /// <summary>
         /// Extracts the <paramref name="dataRange"/> bytes out of the <paramref name="resourceHandle"/>.
@@ -260,42 +340,6 @@ namespace Blizztrack.Framework.TACT.Implementation
             return new (flags, chunks[^1].Decompressed.End.Value, chunks);
         }
 
-        public static async ValueTask<BLTE> ParseSchema(Stream sourceStream, long decompressedSize = 0, CancellationToken stoppingToken = default)
-        {
-            // Manually reconstruct a complete header.
-            var fileStart = new byte[8];
-            await sourceStream.ReadExactlyAsync(fileStart, stoppingToken);
-
-            if (BinaryPrimitives.ReadUInt32LittleEndian(fileStart) != 0x45544C42u)
-                throw new InvalidOperationException("The provided stream does not encapsulate a BLTE resource.");
-
-            var headerSize = BinaryPrimitives.ReadInt32BigEndian(fileStart.AsSpan(4));
-
-            var fileHeader = GC.AllocateUninitializedArray<byte>(headerSize);
-            Buffer.BlockCopy(fileStart, 0, fileHeader, 0, 8);
-            await sourceStream.ReadExactlyAsync(fileHeader.AsMemory(8), stoppingToken);
-
-            return ParseSchema(fileHeader, decompressedSize);
-        }
-
-        /// <summary>
-        /// Attempts to parse a BLTE schema out of the given span. 
-        /// </summary>
-        /// <typeparam name="K">The type of encoding key.</typeparam>
-        /// <param name="resourceHandle">A handle over a resource.</param>
-        /// <param name="decompressedSize">The expected decompressed size of the file. If zero, this parameter is ignored</param>
-        /// <remarks>
-        /// If the checksum calculated does not match <paramref name="encodingKey"/>, <see langword="default" /> is returned.
-        /// If the decompressed size does not match <paramref name="decompressedSize"/>, <see langword="default"/> is returned.
-        /// </remarks>
-        /// <returns>A schema that can then be used to parse a file.</returns>
-        public unsafe static BLTE ParseSchema(ResourceHandle resourceHandle, long decompressedSize = 0)
-        {
-            using var memoryManager = resourceHandle.ToMappedDataSource();
-
-            return ParseSchema(memoryManager..], decompressedSize);
-        }
-
         /// <summary>
         /// Attempts to parse a BLTE schema out of the given span. 
         /// </summary>
@@ -332,48 +376,13 @@ namespace Blizztrack.Framework.TACT.Implementation
             }
         }
 
+        #region Individual block parsers
         private static void ParseImmediate(ReadOnlySpan<byte> input, Span<byte> output, int discardCount)
             => input.Slice(discardCount, output.Length).CopyTo(output);
 
         private static void ParseCompressed(ReadOnlySpan<byte> input, Span<byte> output, int discardCount)
             => Compression.Instance.Decompress(input, output, discardCount, windowBits: 15);
-
-        private static unsafe void CompleteChunks(List<ChunkInfo> chunks, ReadOnlySpan<byte> fileData)
-        {
-            // This is another loop that abuses cache locality
-            // but also has special logic to flatten BLTE nested chunks.
-            for (var i = 0; i < chunks.Count; ++i)
-            {
-                // Because Span's indexer still does bounds checking.
-                ref var currentChunk = ref Unsafe.Add(ref MemoryMarshal.GetReference(CollectionsMarshal.AsSpan(chunks)), i);
-
-                var compressionMode = fileData[currentChunk.Compressed.Start.Value - 1];
-                switch (compressionMode)
-                {
-                    case (byte)'N':
-                        currentChunk.Parser = &ParseImmediate;
-                        break;
-                    case (byte)'Z':
-                        currentChunk.Parser = &ParseCompressed;
-                        break;
-                    case (byte)'F':
-                        var (_, nestedChunks, _) = ParseHeader(fileData[currentChunk.Compressed], currentChunk.Compressed.Start.Value, currentChunk.Decompressed.Start.Value);
-
-                        // Copy-insert everything - Not using RemoveAt + InsertRange because...
-                        // One regrow, two memmoves. More efficient on codegen (one less memmove incurred by RemoveAt)
-
-                        chunks.Capacity = chunks.Count + nestedChunks.Length - 1; // 1. Reallocate if necessary (one chunk will get written over)
-                        var targetSpan = CollectionsMarshal.AsSpan(chunks);
-                        targetSpan[(i + 1)..].CopyTo(targetSpan[(i + nestedChunks.Length)..]);  // 2. Move any chunk after this one ahead
-                        nestedChunks.AsSpan().CopyTo(targetSpan.Slice(i, nestedChunks.Length)); // 3. And insert the new ones, overwriting the current object in the process.
-
-                        i += nestedChunks.Length - 1; // Skip past the inserted chunks.
-                        break;
-                    default:
-                        throw new IndexOutOfRangeException(nameof(compressionMode));
-                }
-            }
-        }
+        #endregion
 
         /// <summary>
         /// Reads the BLTE header from the given data source.
@@ -384,7 +393,7 @@ namespace Blizztrack.Framework.TACT.Implementation
         /// <param name="decompressedBase"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static unsafe (int, List<ChunkInfo>, EncodingKey) ParseHeader<T>(T fileData, int compressedBase, int decompressedBase)
+        private static unsafe (int, List<ChunkInfo>, EncodingKey) ParseHeader<T>(T fileData, int compressedBase, int decompressedBase)
             where T : IDataSource, allows ref struct
         {
             var magic = fileData[..4];
@@ -430,7 +439,40 @@ namespace Blizztrack.Framework.TACT.Implementation
             if (flags == 0)
                 return (flags, [], default);
 
-            CompleteChunks(chunks, fileData);
+            // This is another loop that abuses cache locality
+            // but also has special logic to flatten BLTE nested chunks.
+            for (var i = 0; i < chunks.Count; ++i)
+            {
+                // Because Span's indexer still does bounds checking.
+                ref var currentChunk = ref Unsafe.Add(ref MemoryMarshal.GetReference(CollectionsMarshal.AsSpan(chunks)), i);
+
+                var compressionMode = fileData[currentChunk.Compressed.Start.Value - 1];
+                switch (compressionMode)
+                {
+                    case (byte)'N':
+                        currentChunk.Parser = &ParseImmediate;
+                        break;
+                    case (byte)'Z':
+                        currentChunk.Parser = &ParseCompressed;
+                        break;
+                    case (byte)'F':
+                        var (_, nestedChunks, _) = ParseHeader(fileData[currentChunk.Compressed], currentChunk.Compressed.Start.Value, currentChunk.Decompressed.Start.Value);
+
+                        // Copy-insert everything - Not using RemoveAt + InsertRange because...
+                        // One regrow, two memmoves. More efficient on codegen (one less memmove incurred by RemoveAt)
+
+                        chunks.Capacity = chunks.Count + nestedChunks.Length - 1; // 1. Reallocate if necessary (one chunk will get written over)
+                        var targetSpan = CollectionsMarshal.AsSpan(chunks);
+                        targetSpan[(i + 1)..].CopyTo(targetSpan[(i + nestedChunks.Length)..]);  // 2. Move any chunk after this one ahead
+                        nestedChunks.AsSpan().CopyTo(targetSpan.Slice(i, nestedChunks.Length)); // 3. And insert the new ones, overwriting the current object in the process.
+
+                        i += nestedChunks.Length - 1; // Skip past the inserted chunks.
+                        break;
+                    default:
+                        throw new IndexOutOfRangeException(nameof(compressionMode));
+                }
+            }
+
             return (flags, [.. chunks], encodingKey);
         }
 

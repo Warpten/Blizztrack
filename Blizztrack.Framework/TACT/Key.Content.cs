@@ -5,7 +5,7 @@ namespace Blizztrack.Framework.TACT
     /// <summary>
     /// Tag interface for content keys.
     /// </summary>
-    public interface IContentKey { }
+    public interface IContentKey : IKey { }
 
     public interface IContentKey<T> : IKey<T>, IContentKey where T : IContentKey<T>, allows ref struct
     {
