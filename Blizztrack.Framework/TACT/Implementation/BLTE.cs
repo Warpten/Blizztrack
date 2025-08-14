@@ -109,7 +109,7 @@ namespace Blizztrack.Framework.TACT.Implementation
                 // 5. Update chunks with the compression modes.
                 var visitor = new SpecVisitor(chunks.AsBackingArray(), headerSize);
 
-                chunkSpec.Accept(visitor, (int)sourceStream.Length - headerSize, headerSize);
+                chunkSpec.Accept(visitor, (int)sourceStream.Length - headerSize);
             }
 
             Debug.Assert(decompressedSize == 0 || decompressedSize == chunks[^1].Decompressed.End.Value);
@@ -194,7 +194,9 @@ namespace Blizztrack.Framework.TACT.Implementation
 
             private void UpdateCompressedRange(int chunkSize)
             {
-                // Unsafe.AsRef(in _chunks[_chunkIndex].Compressed) = new Range(_compressedCursor + 1, _compressedCursor - 1 + chunkSize);
+                ref var currentChunk = ref _chunks[_chunkIndex];
+                Debug.Assert(currentChunk.Compressed.Start.Value == _compressedCursor + 1
+                    && currentChunk.Compressed.End.Value == _compressedCursor + chunkSize);
 
                 _compressedCursor += 1 + chunkSize;
                 ++_chunkIndex;

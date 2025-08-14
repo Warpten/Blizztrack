@@ -229,10 +229,9 @@ namespace Blizztrack.Framework.TACT.Implementation
 
         public interface IChunkSpec
         {
-            public void Accept<T>(T visitor, int compressedSize, int baseOffset) where T : IVisitor, allows ref struct
+            public void Accept<T>(T visitor, int compressedSize) where T : IVisitor, allows ref struct
                 => Accept(visitor, new TraversalContext() {
-                    Size = compressedSize,
-                    Offset = baseOffset
+                    Size = compressedSize
                 });
 
             void Accept<T>(T visitor, TraversalContext context) where T : IVisitor, allows ref struct;
@@ -242,14 +241,14 @@ namespace Blizztrack.Framework.TACT.Implementation
         private record struct FlatChunkSpec : IChunkSpec
         {
             readonly void IChunkSpec.Accept<T>(T visitor, TraversalContext context) where T : default
-                => visitor.OnRawChunk(context.Size - context.Offset);
+                => visitor.OnRawChunk(context.Size);
         }
 
         //< Describes a chunk of unknown size that is compressed using ZLib with the provided parameters.
         private record struct CompressionSpec(int Level = 9, int Window = 15) : IChunkSpec
         {
             readonly void IChunkSpec.Accept<T>(T visitor, TraversalContext context) where T : default
-                => visitor.OnCompressedChunk(Level, Window, context.Size - context.Offset);
+                => visitor.OnCompressedChunk(Level, Window, context.Size);
         }
 
         //< Describes a chunk of unknown size that is encrypted with the given parameters. The decrypted data is further compressed
@@ -319,7 +318,6 @@ namespace Blizztrack.Framework.TACT.Implementation
         public class TraversalContext
         {
             public int Size { get; internal set; }
-            public int Offset { get; internal set; }
         }
 
         public interface IVisitor
