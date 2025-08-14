@@ -260,7 +260,7 @@ namespace Blizztrack.Services
             {
                 Client = _clientFactory.CreateClient(),
                 Range = descriptor.Offset != 0
-                    ? new RangeHeaderValue(descriptor.Offset, descriptor.Offset + descriptor.Length)
+                    ? new RangeHeaderValue(descriptor.Offset, descriptor.Offset + descriptor.Length - 1)
                     : default,
                 Endpoints = hosts.GetEnumerator(),
             };
