@@ -70,7 +70,7 @@ namespace Blizztrack.Services
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static async Task<IIndex?> OpenIndex(string productCode, EncodingKey encodingKey, IResourceLocator locator, CancellationToken stoppingToken)
         {
-            var descriptor = ResourceType.Indice.ToDescriptor(productCode, encodingKey);
+            var descriptor = ResourceType.Indice.ToDescriptor(productCode, encodingKey, ContentKey.Zero);
             var handle = await locator.OpenHandle(descriptor, stoppingToken);
             // TODO: Pool this call.
             return Index.Open(handle.ToMappedDataSource(), encodingKey);

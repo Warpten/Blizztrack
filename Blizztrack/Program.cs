@@ -86,6 +86,7 @@ namespace Blizztrack
         {
             var assembly = Assembly.GetExecutingAssembly().GetName();
             ActivitySupplier = new ActivitySource(assembly.Name!, assembly.Version!.ToString());
+
         }
 
         public static async Task Main(string[] args)

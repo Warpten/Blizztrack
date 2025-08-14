@@ -1,6 +1,7 @@
 ﻿using Blizztrack.Framework.TACT;
 using Blizztrack.Framework.TACT.Implementation;
 using Blizztrack.Framework.TACT.Resources;
+using Blizztrack.IO;
 using Blizztrack.Options;
 using Blizztrack.Persistence;
 using Blizztrack.Services.Caching;
@@ -100,8 +101,8 @@ namespace Blizztrack.Services
         {
             using var activity = BeginActivity("blizztrack.resources.open_compressed", productCode, encodingKey, contentKey);
 
-            var compressedDescriptor = ResourceType.Data.ToDescriptor(productCode, encodingKey);
-            var decompressedDescriptor = ResourceType.Decompressed.ToDescriptor(productCode, contentKey);
+            var compressedDescriptor = ResourceType.Data.ToDescriptor(productCode, encodingKey, contentKey);
+            var decompressedDescriptor = ResourceType.Decompressed.ToDescriptor(productCode, encodingKey, contentKey);
             return OpenCompressedImpl<T>(compressedDescriptor, decompressedDescriptor, stoppingToken);
         }
 
@@ -111,8 +112,8 @@ namespace Blizztrack.Services
         {
             using var activity = BeginActivity("blizztrack.resources.open_compressed_handle", productCode, encodingKey, contentKey);
 
-            var compressedDescriptor = ResourceType.Data.ToDescriptor(productCode, encodingKey);
-            var decompressedDescriptor = ResourceType.Decompressed.ToDescriptor(productCode, contentKey);
+            var compressedDescriptor = ResourceType.Data.ToDescriptor(productCode, encodingKey, contentKey);
+            var decompressedDescriptor = ResourceType.Decompressed.ToDescriptor(productCode, encodingKey, contentKey);
             return OpenCompressedHandleImpl(compressedDescriptor, decompressedDescriptor, stoppingToken);
         }
 
@@ -137,7 +138,7 @@ namespace Blizztrack.Services
 
             if (knownResource is not null)
             {
-                var decompressedDescriptor = ResourceType.Decompressed.ToDescriptor(compressedDescriptor.Product, knownResource.ContentKey);
+                var decompressedDescriptor = ResourceType.Decompressed.ToDescriptor(compressedDescriptor.Product, knownResource.EncodingKey, knownResource.ContentKey);
 
                 return await OpenCompressedHandleImpl(compressedDescriptor, decompressedDescriptor, stoppingToken);
             }
@@ -175,7 +176,7 @@ namespace Blizztrack.Services
 
             if (knownResource is not null)
             {
-                var decompressed = ResourceType.Decompressed.ToDescriptor(compressed.Product, knownResource.ContentKey);
+                var decompressed = ResourceType.Decompressed.ToDescriptor(compressed.Product, knownResource.EncodingKey, knownResource.ContentKey);
 
                 return await OpenCompressedImpl<T>(compressed, decompressed, stoppingToken);
             }
@@ -253,7 +254,7 @@ namespace Blizztrack.Services
         /// <returns></returns>
         private async ValueTask<ContentQueryResult> ExecuteQuery(IEnumerable<PatchEndpoint> hosts, ResourceDescriptor descriptor, CancellationToken stoppingToken)
         {
-            Debug.Assert(descriptor.Type != ResourceType.Decompressed, "Decompressed descriptors can't be acquired from CDNs.");
+            // Debug.Assert(descriptor.Type != ResourceType.Decompressed, "Decompressed descriptors can't be acquired from CDNs.");
 
             var transferContext = new TransferContext()
             {
@@ -280,7 +281,8 @@ namespace Blizztrack.Services
                 response.EnsureSuccessStatusCode();
 
                 var dataStream = await response.Content.ReadAsStreamAsync();
-                var transferInformation = new ContentQueryResult(response.StatusCode, dataStream);
+                var wrappedStream = new DelegateStream(dataStream, response.Content.Headers.ContentLength);
+                var transferInformation = new ContentQueryResult(response.StatusCode, wrappedStream);
 
                 return Outcome.FromResult(transferInformation);
             }, resilienceContext, transferContext);

@@ -11,6 +11,8 @@ using Blizztrack.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
+using Newtonsoft.Json.Linq;
+
 using NSwag.Annotations;
 
 using System.ComponentModel;
@@ -36,13 +38,14 @@ namespace Blizztrack.API
             [Description("The build configuration hash.")] BoundEncodingKey buildConfiguration,
             [Description("The CDN configuration hash.")] BoundEncodingKey serverConfiguration,
             [Description("An unique identifier for the file to obtain.")] uint fileDataID,
+            [FromQuery] bool raw,
             CancellationToken stoppingToken)
         {
             var fs = await ResolveFileSystem(productCode, buildConfiguration, serverConfiguration, stoppingToken);
             if (fs is null)
                 return TypedResults.NotFound();
 
-            return await OpenFileDataID(fs, fileDataID, stoppingToken);
+            return await OpenFileDataID(fs, fileDataID, stoppingToken, raw);
         }
 
         [HttpGet("p/{productCode}/b/{buildConfiguration}/s/{serverConfiguration}/ek/{encodingKey}/get")]
@@ -58,13 +61,14 @@ namespace Blizztrack.API
             [Description("The build configuration hash.")] BoundEncodingKey buildConfiguration,
             [Description("The CDN configuration hash.")] BoundEncodingKey serverConfiguration,
             [Description("An encoding key for the file.")] BoundEncodingKey encodingKey,
+            [FromQuery] bool raw,
             CancellationToken stoppingToken)
         {
             var fs = await ResolveFileSystem(productCode, buildConfiguration, serverConfiguration, stoppingToken);
             if (fs is null)
                 return TypedResults.NotFound();
 
-            return await OpenEncodingKey(fs, encodingKey, stoppingToken);
+            return await OpenEncodingKey(fs, encodingKey, stoppingToken, raw);
         }
 
         [HttpGet("p/{productCode}/b/{buildConfiguration}/s/{serverConfiguration}/ck/{contentKey}/get")]
@@ -80,13 +84,14 @@ namespace Blizztrack.API
             [Description("The build configuration hash.")] BoundEncodingKey buildConfiguration,
             [Description("The CDN configuration hash.")] BoundEncodingKey serverConfiguration,
             [Description("A content key for the file.")] BoundContentKey contentKey,
+            [FromQuery] bool raw,
             CancellationToken stoppingToken)
         {
             var fs = await ResolveFileSystem(productCode, buildConfiguration, serverConfiguration, stoppingToken);
             if (fs is null)
                 return TypedResults.NotFound();
 
-            return await OpenContentKey(fs, contentKey, stoppingToken);
+            return await OpenContentKey(fs, contentKey, stoppingToken, raw);
         }
 
         #endregion
@@ -103,13 +108,14 @@ namespace Blizztrack.API
         public async Task<IResult> OpenFileDataID(
             [Description("The name of the build configuration.")] string configurationName,
             [Description("An unique identifier for the file to obtain.")] uint fileDataID,
+            [FromQuery] bool raw,
             CancellationToken stoppingToken)
         {
             var fs = await ResolveFileSystem(configurationName, stoppingToken);
             if (fs is null)
                 return TypedResults.NotFound();
 
-            return await OpenFileDataID(fs, fileDataID, stoppingToken);
+            return await OpenFileDataID(fs, fileDataID, stoppingToken, raw);
         }
 
         [HttpGet("c/{configurationName}/ek/{encodingKey}/get")]
@@ -123,13 +129,14 @@ namespace Blizztrack.API
         public async Task<IResult> OpenEncodingKey(
             [Description("The name of the build configuration.")] string configurationName,
             [Description("An encoding key for the file.")] BoundEncodingKey encodingKey,
+            [FromQuery] bool raw,
             CancellationToken stoppingToken)
         {
             var fs = await ResolveFileSystem(configurationName, stoppingToken);
             if (fs is null)
                 return TypedResults.NotFound();
 
-            return await OpenEncodingKey(fs, encodingKey, stoppingToken);
+            return await OpenEncodingKey(fs, encodingKey, stoppingToken, raw);
         }
 
         [HttpGet("c/{configurationName}/ck/{contentKey}/get")]
@@ -143,17 +150,18 @@ namespace Blizztrack.API
         public async Task<IResult> OpenContentKey(
             [Description("The name of the build configuration.")] string configurationName,
             [Description("A content key for the file.")] BoundContentKey contentKey,
+            [FromQuery] bool raw,
             CancellationToken stoppingToken)
         {
             var fs = await ResolveFileSystem(configurationName, stoppingToken);
             if (fs is null)
                 return TypedResults.NotFound();
 
-            return await OpenContentKey(fs, contentKey, stoppingToken);
+            return await OpenContentKey(fs, contentKey, stoppingToken, raw);
         }
         #endregion
 
-        private async Task<IResult> OpenFileDataID(IFileSystem fileSystem, uint fileDataID, CancellationToken stoppingToken)
+        private async Task<IResult> OpenFileDataID(IFileSystem fileSystem, uint fileDataID, CancellationToken stoppingToken, bool raw)
         {
             var descriptors = fileSystem.OpenFDID(fileDataID);
             if (descriptors.Length == 0)
@@ -171,15 +179,19 @@ namespace Blizztrack.API
 
             foreach (var descriptor in descriptors)
             {
+                var compressionSpec = fileSystem.GetCompressionSpec(descriptor.EncodingKey);
+                if (compressionSpec is null)
+                    continue;
+
                 var dataStream = await resourceLocator.OpenStream(descriptor, stoppingToken);
                 if (dataStream != Stream.Null)
-                    return TypedResults.Stream(await BLTE.Parse(dataStream, stoppingToken: stoppingToken));
+                    return TypedResults.Stream(raw ? dataStream : await BLTE.Execute(dataStream, compressionSpec, stoppingToken: stoppingToken));
             }
 
             return TypedResults.NotFound();
         }
 
-        private async Task<IResult> OpenEncodingKey(IFileSystem fileSystem, EncodingKey encodingKey, CancellationToken stoppingToken)
+        private async Task<IResult> OpenEncodingKey(IFileSystem fileSystem, EncodingKey encodingKey, CancellationToken stoppingToken, bool raw)
         {
             var descriptor = fileSystem.OpenEncodingKey(encodingKey);
 
@@ -193,14 +205,18 @@ namespace Blizztrack.API
                 return TypedResults.Ok();
             }
 
+            var compressionSpec = fileSystem.GetCompressionSpec(encodingKey);
+            if (compressionSpec is null)
+                return TypedResults.NotFound();
+
             var dataStream = await resourceLocator.OpenStream(descriptor, stoppingToken);
             if (dataStream != Stream.Null)
-                return TypedResults.Stream(await BLTE.Parse(dataStream, stoppingToken: stoppingToken));
+                return TypedResults.Stream(raw ? dataStream : await BLTE.Execute(dataStream, compressionSpec, stoppingToken: stoppingToken));
 
             return TypedResults.NotFound();
         }
 
-        private async Task<IResult> OpenContentKey(IFileSystem fileSystem, ContentKey contentKey, CancellationToken stoppingToken)
+        private async Task<IResult> OpenContentKey(IFileSystem fileSystem, ContentKey contentKey, CancellationToken stoppingToken, bool raw)
         {
             var descriptors = fileSystem.OpenContentKey(contentKey);
             if (descriptors.Length == 0)
@@ -218,9 +234,13 @@ namespace Blizztrack.API
 
             foreach (var descriptor in descriptors)
             {
+                var compressionSpec = fileSystem.GetCompressionSpec(descriptor.EncodingKey);
+                if (compressionSpec is null)
+                    continue;
+
                 var dataStream = await resourceLocator.OpenStream(descriptor, stoppingToken);
                 if (dataStream != Stream.Null)
-                    return TypedResults.Stream(await BLTE.Parse(dataStream, stoppingToken: stoppingToken));
+                    return TypedResults.Stream(raw ? dataStream : await BLTE.Execute(dataStream, compressionSpec, stoppingToken: stoppingToken));
             }
 
             return TypedResults.NotFound();
@@ -248,7 +268,7 @@ namespace Blizztrack.API
         private async Task<T> OpenConfig<T>(string productCode, EncodingKey encodingKey, CancellationToken stoppingToken)
             where T : class, IResourceParser<T>
         {
-            var descriptor = ResourceType.Config.ToDescriptor(productCode, encodingKey);
+            var descriptor = ResourceType.Config.ToDescriptor(productCode, encodingKey, ContentKey.Zero);
             var resourceHandle = await resourceLocator.OpenHandle(descriptor, stoppingToken);
 
             return T.OpenResource(resourceHandle);
