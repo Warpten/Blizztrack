@@ -128,7 +128,6 @@ namespace Blizztrack
                 .AddSingleton<MediatorService>()
                 .AddHostedService<SummaryMonitorService>()
                 .AddHostedService<KnownFilesMonitorService>()
-                .AddSingleton<ContentService>()
                 .AddSingleton<LocalCacheService>()
                 .AddSingleton<IResourceLocator, ResourceLocatorService>()
 

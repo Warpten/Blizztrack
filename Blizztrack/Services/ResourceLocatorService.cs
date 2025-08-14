@@ -1,13 +1,13 @@
-﻿using Blizztrack.Framework.TACT;
+﻿using Blizztrack.Framework.Extensions.Services;
+using Blizztrack.Framework.TACT;
 using Blizztrack.Framework.TACT.Implementation;
 using Blizztrack.Framework.TACT.Resources;
-using Blizztrack.IO;
 using Blizztrack.Options;
 using Blizztrack.Persistence;
 using Blizztrack.Services.Caching;
 
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Query.Internal;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Options;
 
 using Polly;
@@ -16,33 +16,21 @@ using Polly.Telemetry;
 
 using System.Diagnostics;
 using System.Net;
-using System.Net.Http.Headers;
 
 using static Blizztrack.Program;
 
 namespace Blizztrack.Services
 {
-    file class TransferContext
-    {
-        public required IEnumerator<PatchEndpoint> Endpoints { get; init; }
-        public required HttpClient Client { get; init; }
-
-        public required RangeHeaderValue? Range { get; init; }
-    }
-
-    public readonly record struct ContentQueryResult(HttpStatusCode StatusCode, Stream Body);
-
     /// <summary>
     /// Provides utility methods to access resources, optionally downloading them from Blizzard's CDNs.
     /// </summary>
     /// <param name="clientFactory"></param>
     /// <param name="localCache"></param>
     /// <param name="serviceProvider"></param>
-    public class ResourceLocatorService : IResourceLocator
+    public class ResourceLocatorService : AbstractResourceLocatorService
     {
         private readonly LocalCacheService _localCache;
         private readonly DatabaseContext _databaseContext;
-        private readonly IHttpClientFactory _clientFactory;
         private readonly IOptionsMonitor<Settings> _settings;
 
         //! TODO: Nop this out if non-telemetry enabled builds become a thing
@@ -61,9 +49,8 @@ namespace Blizztrack.Services
             return activity;
         }
 
-        public ResourceLocatorService(IHttpClientFactory clientFactory, IServiceProvider serviceProvider)
+        public ResourceLocatorService(IHttpClientFactory clientFactory, IServiceProvider serviceProvider) : base(clientFactory)
         {
-            _clientFactory = clientFactory;
             _localCache = serviceProvider.GetRequiredService<LocalCacheService>();
             _settings = serviceProvider.GetRequiredService<IOptionsMonitor<Settings>>();
 
@@ -71,64 +58,87 @@ namespace Blizztrack.Services
             _databaseContext = scope.ServiceProvider.GetRequiredService<DatabaseContext>();
         }
 
-        public async Task<ResourceHandle> OpenHandle(ResourceDescriptor resourceDescriptor, CancellationToken stoppingToken)
-        {
-            var localHandle = _localCache.OpenHandle(resourceDescriptor);
-            if (localHandle.Exists)
-                return localHandle;
-
-            var endpoints = GetEndpoints(resourceDescriptor.Product);
-            if (endpoints.Count == 0)
-                return default;
-
-            var backendQuery = await ExecuteQuery(endpoints, resourceDescriptor, stoppingToken);
-            if (backendQuery.StatusCode != HttpStatusCode.OK && backendQuery.StatusCode != HttpStatusCode.PartialContent)
-                return default;
-
-            { // Create a stream from the local handle.
-                using var fileStream = new FileStream(localHandle.Path, FileMode.Create, FileAccess.Write, FileShare.None, 0, true);
-                await backendQuery.Body.CopyToAsync(fileStream, stoppingToken);
-                fileStream.Dispose();
-            }
-
-            return _localCache.OpenHandle(resourceDescriptor);
-        }
-
-        public Task<T> OpenCompressed<E, C, T>(string productCode, E encodingKey, C contentKey, CancellationToken stoppingToken)
-            where E : IEncodingKey<E>, allows ref struct
-            where C : IContentKey<C>, allows ref struct
-            where T : class, IResourceParser<T>
+        public override Task<T> OpenCompressed<E, C, T>(string productCode, E encodingKey, C contentKey, CancellationToken stoppingToken)
         {
             using var activity = BeginActivity("blizztrack.resources.open_compressed", productCode, encodingKey, contentKey);
 
-            var compressedDescriptor = ResourceType.Data.ToDescriptor(productCode, encodingKey, contentKey);
-            var decompressedDescriptor = ResourceType.Decompressed.ToDescriptor(productCode, encodingKey, contentKey);
-            return OpenCompressedImpl<T>(compressedDescriptor, decompressedDescriptor, stoppingToken);
+            return base.OpenCompressed<E, C, T>(productCode, encodingKey, contentKey, stoppingToken);
         }
 
-        public Task<ResourceHandle> OpenCompressedHandle<E, C>(string productCode, E encodingKey, C contentKey, CancellationToken stoppingToken)
-            where E : IEncodingKey<E>, allows ref struct
-            where C : IContentKey<C>, allows ref struct
+        public override Task<ResourceHandle> OpenCompressedHandle<E, C>(string productCode, E encodingKey, C contentKey, CancellationToken stoppingToken)
         {
             using var activity = BeginActivity("blizztrack.resources.open_compressed_handle", productCode, encodingKey, contentKey);
 
-            var compressedDescriptor = ResourceType.Data.ToDescriptor(productCode, encodingKey, contentKey);
-            var decompressedDescriptor = ResourceType.Decompressed.ToDescriptor(productCode, encodingKey, contentKey);
-            return OpenCompressedHandleImpl(compressedDescriptor, decompressedDescriptor, stoppingToken);
+            return base.OpenCompressedHandle(productCode, encodingKey, contentKey, stoppingToken);
         }
 
-        // VALIDATED API
-        public Task<T> OpenCompressed<E, T>(string productCode, E encodingKey, CancellationToken stoppingToken)
-            where E : IEncodingKey<E>, allows ref struct
+        // VALIDATED IMPLEMENTATION DETAIL
+        private async Task<T> OpenCompressedImpl<T>(ResourceDescriptor compressed, ResourceDescriptor decompressed, CancellationToken stoppingToken)
             where T : class, IResourceParser<T>
+        {
+            var decompressedHandle = _localCache.OpenHandle(decompressed);
+            if (decompressedHandle != default && decompressedHandle.Exists)
+                return T.OpenResource(decompressedHandle);
+
+            // Create the decompressed resource now.
+            var compressedHandle = await OpenHandle(compressed, stoppingToken);
+            var decompressedData = BLTE.Parse(compressedHandle);
+
+            _localCache.Write(decompressed.LocalPath, decompressedData);
+            return T.OpenResource(_localCache.OpenHandle(decompressed));
+        }
+
+        protected override ResiliencePipeline<ContentQueryResult> AcquisitionPipeline { get; } = new ResiliencePipelineBuilder<ContentQueryResult>()
+            .AddConcurrencyLimiter(permitLimit: 20, queueLimit: 10)
+            .AddRetry(new RetryStrategyOptions<ContentQueryResult>()
+            {
+                BackoffType = DelayBackoffType.Constant,
+                MaxDelay = TimeSpan.Zero,
+                MaxRetryAttempts = int.MaxValue,
+                ShouldHandle = static args => args.Outcome switch
+                {
+                    { Exception: not null } => PredicateResult.True(),
+                    { Result.StatusCode: HttpStatusCode.NotFound } => PredicateResult.False(),
+                    _ => PredicateResult.False()
+                }
+            })
+            .ConfigureTelemetry(new TelemetryOptions()
+            {
+                LoggerFactory = LoggerFactory.Create(options => options.AddOpenTelemetry())
+            })
+            .Build();
+
+        /// <summary>
+        /// Gets all endpoints that match the product (and optionally the region) provided.
+        /// </summary>
+        /// <param name="productCode"></param>
+        /// <param name="region"></param>
+        /// <returns></returns>
+        protected override IList<PatchEndpoint> GetEndpoints(string productCode, string region = "xx")
+        {
+            var endpointsQuery = _databaseContext.Endpoints.Include(e => e.Products).Where(e => e.Products.Any(p => p.Code == productCode));
+            if (region != "xx")
+                endpointsQuery = endpointsQuery.Where(e => e.Regions.Contains(region));
+
+            var endpoints = endpointsQuery.Select(e => new PatchEndpoint(e.Host, e.DataPath, e.ConfigurationPath));
+
+            var configurationEndpoints = _settings.CurrentValue.Cache.CDNs
+                .Where(c => c.Products.Contains(productCode))
+                .SelectMany(c => c.Hosts.Select(h => new PatchEndpoint(h, c.Data, c.Configuration)));
+
+            return [.. endpoints, .. configurationEndpoints];
+        }
+
+        protected override ResourceHandle OpenLocalHandle(ResourceDescriptor resourceDescriptor)
+            => _localCache.OpenHandle(resourceDescriptor);
+
+        protected override void CreateLocalHandle(ResourceDescriptor resourceDescriptor, byte[] fileData)
+            => _localCache.Write(resourceDescriptor.LocalPath, fileData);
+
+        public override Task<T> OpenCompressed<E, T>(string productCode, E encodingKey, CancellationToken stoppingToken)
             => OpenCompressedImpl<T>(ResourceType.Data.ToDescriptor(productCode, encodingKey), stoppingToken);
 
-        // VALIDATED API
-        public Task<ResourceHandle> OpenCompressedHandle<E>(string productCode, E encodingKey, CancellationToken stoppingToken)
-            where E : IEncodingKey<E>, allows ref struct
-            => OpenCompressedHandle(ResourceType.Data.ToDescriptor(productCode, encodingKey), stoppingToken);
-
-        public async Task<ResourceHandle> OpenCompressedHandle(ResourceDescriptor compressedDescriptor, CancellationToken stoppingToken)
+        public override async Task<ResourceHandle> OpenCompressedHandle(ResourceDescriptor compressedDescriptor, CancellationToken stoppingToken)
         {
             // Look for this resource in the well known table.
             // If it's well known, creeate a file on disk if it doesn't exist, decompressed the resource
@@ -177,7 +187,6 @@ namespace Blizztrack.Services
             if (knownResource is not null)
             {
                 var decompressed = ResourceType.Decompressed.ToDescriptor(compressed.Product, knownResource.EncodingKey, knownResource.ContentKey);
-
                 return await OpenCompressedImpl<T>(compressed, decompressed, stoppingToken);
             }
             else
@@ -186,122 +195,6 @@ namespace Blizztrack.Services
                 var compressedHandle = await OpenHandle(compressed, stoppingToken);
                 return T.OpenCompressedResource(compressedHandle);
             }
-        }
-
-        // VALIDATED IMPLEMENTATION DETAIL
-        private async Task<T> OpenCompressedImpl<T>(ResourceDescriptor compressed, ResourceDescriptor decompressed, CancellationToken stoppingToken)
-            where T : class, IResourceParser<T>
-        {
-            var decompressedHandle = _localCache.OpenHandle(decompressed);
-            if (decompressedHandle != default && decompressedHandle.Exists)
-                return T.OpenResource(decompressedHandle);
-
-            // Create the decompressed resource now.
-            var compressedHandle = await OpenHandle(compressed, stoppingToken);
-            var decompressedData = BLTE.Parse(compressedHandle);
-
-            _localCache.Write(decompressed.LocalPath, decompressedData);
-            return T.OpenResource(_localCache.OpenHandle(decompressed));
-        }
-
-        private readonly ResiliencePipeline<ContentQueryResult> _acquisitionPipeline = new ResiliencePipelineBuilder<ContentQueryResult>()
-            .AddConcurrencyLimiter(permitLimit: 20, queueLimit: 10)
-            .AddRetry(new RetryStrategyOptions<ContentQueryResult>()
-            {
-                BackoffType = DelayBackoffType.Constant,
-                MaxDelay = TimeSpan.Zero,
-                MaxRetryAttempts = int.MaxValue,
-                ShouldHandle = static args => args.Outcome switch
-                {
-                    { Exception: not null } => PredicateResult.True(),
-                    { Result.StatusCode: HttpStatusCode.NotFound } => PredicateResult.False(),
-                    _ => PredicateResult.False()
-                }
-            })
-            .ConfigureTelemetry(new TelemetryOptions()
-            {
-                LoggerFactory = LoggerFactory.Create(options => options.AddOpenTelemetry())
-            })
-            .Build();
-
-        /// <summary>
-        /// Gets all endpoints that match the product (and optionally the region) provided.
-        /// </summary>
-        /// <param name="productCode"></param>
-        /// <param name="region"></param>
-        /// <returns></returns>
-        private IList<PatchEndpoint> GetEndpoints(string productCode, string region = "xx")
-        {
-            var endpointsQuery = _databaseContext.Endpoints.Include(e => e.Products).Where(e => e.Products.Any(p => p.Code == productCode));
-            if (region != "xx")
-                endpointsQuery = endpointsQuery.Where(e => e.Regions.Contains(region));
-
-            var endpoints = endpointsQuery.Select(e => new PatchEndpoint(e.Host, e.DataPath, e.ConfigurationPath));
-
-            var configurationEndpoints = _settings.CurrentValue.Cache.CDNs
-                .Where(c => c.Products.Contains(productCode))
-                .SelectMany(c => c.Hosts.Select(h => new PatchEndpoint(h, c.Data, c.Configuration)));
-
-            return [.. endpoints, .. configurationEndpoints];
-        }
-
-        /// <summary>
-        /// Queries the given descriptor from the first endpoint that responds successfully.
-        /// </summary>
-        /// <param name="hosts"></param>
-        /// <param name="descriptor"></param>
-        /// <param name="stoppingToken"></param>
-        /// <returns></returns>
-        private async ValueTask<ContentQueryResult> ExecuteQuery(IEnumerable<PatchEndpoint> hosts, ResourceDescriptor descriptor, CancellationToken stoppingToken)
-        {
-            // Debug.Assert(descriptor.Type != ResourceType.Decompressed, "Decompressed descriptors can't be acquired from CDNs.");
-
-            var transferContext = new TransferContext()
-            {
-                Client = _clientFactory.CreateClient(),
-                Range = descriptor.Offset != 0
-                    ? new RangeHeaderValue(descriptor.Offset, descriptor.Offset + descriptor.Length - 1)
-                    : default,
-                Endpoints = hosts.GetEnumerator(),
-            };
-
-            var resilienceContext = ResilienceContextPool.Shared.Get(stoppingToken);
-            var result = await _acquisitionPipeline.ExecuteOutcomeAsync(async (context, state) =>
-            {
-                if (!state.Endpoints.MoveNext())
-                    return Outcome.FromResult(new ContentQueryResult(HttpStatusCode.NotFound, Stream.Null));
-
-                var server = state.Endpoints.Current;
-                HttpRequestMessage requestMessage = new(HttpMethod.Get, $"http://{server.Host}/{server.DataStem}/{descriptor.RemotePath}")
-                {
-                    Headers = { Range = state.Range },
-                };
-
-                var response = await state.Client.SendAsync(requestMessage, HttpCompletionOption.ResponseHeadersRead, stoppingToken);
-                response.EnsureSuccessStatusCode();
-
-                var dataStream = await response.Content.ReadAsStreamAsync();
-                var wrappedStream = new DelegateStream(dataStream, response.Content.Headers.ContentLength);
-                var transferInformation = new ContentQueryResult(response.StatusCode, wrappedStream);
-
-                return Outcome.FromResult(transferInformation);
-            }, resilienceContext, transferContext);
-
-            return result.Result;
-        }
-
-        public async Task<Stream> OpenStream(ResourceDescriptor descriptor, CancellationToken stoppingToken = default)
-        {
-            var localHandle = _localCache.OpenHandle(descriptor);
-            if (localHandle.Exists && localHandle.Exists)
-                return localHandle.ToStream();
-
-            var endpoints = GetEndpoints(descriptor.Product);
-            var backendQuery = await ExecuteQuery(endpoints, descriptor, stoppingToken);
-            if (backendQuery.StatusCode != HttpStatusCode.OK && backendQuery.StatusCode != HttpStatusCode.PartialContent)
-                return Stream.Null;
-
-            return backendQuery.Body;
         }
     }
 }

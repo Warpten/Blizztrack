@@ -59,6 +59,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Blizztrack.Framework.Extensions.AspNetCore\Blizztrack.Framework.Extensions.AspNetCore.csproj" />
     <ProjectReference Include="..\Blizztrack.Framework\Blizztrack.Framework.csproj" />
   </ItemGroup>
 
