@@ -7,6 +7,10 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
+  <ItemGroup Condition="'$(Configuration)' != 'Debug'">
+    <Compile Remove="Internals.cs" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\Blizztrack.Shared\Blizztrack.Shared.csproj" />
   </ItemGroup>
@@ -17,15 +21,15 @@
   </ItemGroup>
 
   <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
-    <DefineConstants>PLATFORM_WINDOWS</DefineConstants>
+    <DefineConstants>$(DEFINE_CONSTANTS);PLATFORM_WINDOWS</DefineConstants>
   </PropertyGroup>
   <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
-    <DefineConstants>PLATFORM_LINUX</DefineConstants>
+    <DefineConstants>$(DEFINE_CONSTANTS);PLATFORM_LINUX</DefineConstants>
   </PropertyGroup>
   <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('FreeBSD'))">
-    <DefineConstants>PLATFORM_FREEBSD;PLATFORM_LINUX</DefineConstants>
+    <DefineConstants>$(DEFINE_CONSTANTS);PLATFORM_FREEBSD;PLATFORM_LINUX</DefineConstants>
   </PropertyGroup>
   <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('OSX')) or $([MSBuild]::IsOSPlatform('macOS'))">
-    <DefineConstants>PLATFORM_OSX</DefineConstants>
+    <DefineConstants>$(DEFINE_CONSTANTS);PLATFORM_OSX</DefineConstants>
   </PropertyGroup>
 </Project>
