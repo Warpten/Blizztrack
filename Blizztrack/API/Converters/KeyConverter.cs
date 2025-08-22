@@ -5,9 +5,9 @@ using System.Text.Json.Serialization;
 
 namespace Blizztrack.API.Converters
 {
-    public class KeyConverter<T> : JsonConverter<T> where T : IKey<T>
+    public class KeyConverter<T> : JsonConverter<T> where T : struct, IKey<T>
     {
-        public override T? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        public override T Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         {
             throw new NotImplementedException();
         }

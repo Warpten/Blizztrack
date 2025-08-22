@@ -56,7 +56,7 @@
         /// <summary>
         /// Returns the relative path of this resource on disk.
         /// </summary>
-        public readonly string LocalPath => _type.FormatLocal(Archive.AsRef());
+        public readonly string LocalPath => _type.FormatLocal(Archive);
 
         /// <summary>
         /// Returns the relative path of this resource on CDNs.

@@ -41,11 +41,11 @@ namespace Blizztrack.Framework.TACT.Configuration
                     if (property.SequenceEqual("archives"u8))
                         archives = value.AsKeyString<EncodingKey>((byte)' ');
                     else if (property.SequenceEqual("file-index"u8))
-                        fileIndex = value.AsKeyString<EncodingKey>();
+                        fileIndex = value.AsKeyString<EncodingKey>() ?? default;
                     else if (property.SequenceEqual("file-index-size"u8))
                         fileIndexSize = long.Parse(value);
                     else if (property.SequenceEqual("archive-group"u8))
-                        archiveGroup = value.AsKeyString<EncodingKey>();
+                        archiveGroup = value.AsKeyString<EncodingKey>() ?? default;
                 }
 
                 return new ServerConfiguration(archives, new (fileIndex, fileIndexSize), archiveGroup);

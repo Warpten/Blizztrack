@@ -39,7 +39,7 @@ namespace Blizztrack.Framework.TACT.Implementation
 
         public int Count => _indices.Sum(i => i.Count);
 
-        public Entry FindEncodingKey<T>(in T encodingKey) where T : notnull, IEncodingKey<T>, allows ref struct
+        public Entry FindEncodingKey(in Views.EncodingKey encodingKey)
         {
             // Not valid for TACT ... Or is it?
             // var archiveIndex = encodingKey[0];

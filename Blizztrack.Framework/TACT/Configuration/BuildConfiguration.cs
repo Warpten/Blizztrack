@@ -42,9 +42,9 @@ namespace Blizztrack.Framework.TACT.Configuration
                 Debug.Assert(properties.Length == values.Length);
 
                 var rootHash = ContentKey.Zero;
-                var encodingHashes = (C: default(ContentKey), E: default(EncodingKey));
+                var encodingHashes = default(KeyPair<ContentKey, EncodingKey>);
                 long[] encodingSizes = [0L, 0L];
-                var installHashes = (C: default(ContentKey), E: default(EncodingKey));
+                var installHashes = default(KeyPair<ContentKey, EncodingKey>);
                 long[] installSizes = [0L, 0L];
                 var buildName = string.Empty;
 
@@ -54,7 +54,7 @@ namespace Blizztrack.Framework.TACT.Configuration
                     var value = data[values[i]];
 
                     if (property.SequenceEqual("root"u8))
-                        rootHash = value.AsKeyString<ContentKey>();
+                        rootHash = value.AsKeyString<ContentKey>() ?? default;
                     else if (property.SequenceEqual("encoding"u8))
                         encodingHashes = value.AsKeyStringPair<ContentKey, EncodingKey>();
                     else if (property.SequenceEqual("encoding-size"u8))
@@ -75,14 +75,14 @@ namespace Blizztrack.Framework.TACT.Configuration
                         buildName = System.Text.Encoding.ASCII.GetString(value);
                 }
 
-                Debug.Assert(encodingHashes.C != ContentKey.Zero && encodingHashes.E != EncodingKey.Zero);
+                Debug.Assert(encodingHashes.Content && encodingHashes.Encoding);
 
                 return new BuildConfiguration()
                 {
                     BuildName = buildName,
                     Root = rootHash,
-                    Encoding = new(new(encodingHashes.C, encodingSizes[0]), new(encodingHashes.E, encodingSizes[1])),
-                    Install = new(new(installHashes.C, installSizes[0]), new(installHashes.E, installSizes[1])),
+                    Encoding = new(new(encodingHashes.Content, encodingSizes[0]), new(encodingHashes.Encoding, encodingSizes[1])),
+                    Install = new(new(installHashes.Content, installSizes[0]), new(installHashes.Encoding, installSizes[1])),
                 };
             });
         }

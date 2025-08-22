@@ -21,6 +21,8 @@ using static Blizztrack.Program;
 
 namespace Blizztrack.Services
 {
+    using Views = Framework.TACT.Views;
+
     /// <summary>
     /// Provides utility methods to access resources, optionally downloading them from Blizzard's CDNs.
     /// </summary>
@@ -34,9 +36,7 @@ namespace Blizztrack.Services
         private readonly IOptionsMonitor<Settings> _settings;
 
         //! TODO: Nop this out if non-telemetry enabled builds become a thing
-        private static Activity? BeginActivity<E, C>(string activityCode, string productCode, E encodingKey, C contentKey)
-            where E : IEncodingKey<E>, allows ref struct
-            where C : IContentKey<C>, allows ref struct
+        private static Activity? BeginActivity(string activityCode, string productCode, in Views.EncodingKey encodingKey, in Views.ContentKey contentKey)
         {
             var activity = ActivitySupplier.StartActivity(activityCode);
             if (activity is not null && activity.IsAllDataRequested)
@@ -58,14 +58,14 @@ namespace Blizztrack.Services
             _databaseContext = scope.ServiceProvider.GetRequiredService<DatabaseContext>();
         }
 
-        public override Task<T> OpenCompressed<E, C, T>(string productCode, E encodingKey, C contentKey, CancellationToken stoppingToken)
+        public override Task<T> OpenCompressed<T>(string productCode, in Views.EncodingKey encodingKey, in Views.ContentKey contentKey, CancellationToken stoppingToken)
         {
             using var activity = BeginActivity("blizztrack.resources.open_compressed", productCode, encodingKey, contentKey);
 
-            return base.OpenCompressed<E, C, T>(productCode, encodingKey, contentKey, stoppingToken);
+            return base.OpenCompressed<T>(productCode, encodingKey, contentKey, stoppingToken);
         }
 
-        public override Task<ResourceHandle> OpenCompressedHandle<E, C>(string productCode, E encodingKey, C contentKey, CancellationToken stoppingToken)
+        public override Task<ResourceHandle> OpenCompressedHandle(string productCode, in Views.EncodingKey encodingKey, in Views.ContentKey contentKey, CancellationToken stoppingToken)
         {
             using var activity = BeginActivity("blizztrack.resources.open_compressed_handle", productCode, encodingKey, contentKey);
 
@@ -135,7 +135,7 @@ namespace Blizztrack.Services
         protected override void CreateLocalHandle(ResourceDescriptor resourceDescriptor, byte[] fileData)
             => _localCache.Write(resourceDescriptor.LocalPath, fileData);
 
-        public override Task<T> OpenCompressed<E, T>(string productCode, E encodingKey, CancellationToken stoppingToken)
+        public override Task<T> OpenCompressed<T>(string productCode, in Views.EncodingKey encodingKey, CancellationToken stoppingToken)
             => OpenCompressedImpl<T>(ResourceType.Data.ToDescriptor(productCode, encodingKey), stoppingToken);
 
         public override async Task<ResourceHandle> OpenCompressedHandle(ResourceDescriptor compressedDescriptor, CancellationToken stoppingToken)

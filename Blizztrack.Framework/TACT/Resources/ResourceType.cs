@@ -31,8 +31,8 @@ namespace Blizztrack.Framework.TACT.Resources
 
         internal ResourceTypeImpl(int identity, string path) : this(identity, path, path) { }
 
-        public string FormatLocal<K>(K key) where K : IKey<K>, allows ref struct => Shared.Format(_localPath, key.AsHexString());
-        public string FormatRemote<K>(K key) where K : IKey<K>, allows ref struct => Shared.Format(_remotePath, key.AsHexString());
+        public string FormatLocal<K>(K key) where K : struct, IKey<K>, allows ref struct => Shared.Format(_localPath, key.AsHexString());
+        public string FormatRemote<K>(K key) where K : struct, IKey<K>, allows ref struct => Shared.Format(_remotePath, key.AsHexString());
 
         static ResourceTypeImpl()
         {
@@ -84,23 +84,17 @@ namespace Blizztrack.Framework.TACT.Resources
 
         internal EncodingResourceType(in ResourceTypeImpl identity) => _identity = identity;
 
-        public ResourceDescriptor ToDescriptor<E, C, A>(string productCode, A archiveKey, E encodingKey, C contentKey, long offset, long length)
-            where E : IEncodingKey<E>, allows ref struct
-            where C : IContentKey<C>, allows ref struct
-            where A : IEncodingKey<A>, allows ref struct
+        public ResourceDescriptor ToDescriptor(string productCode, in Views.EncodingKey archiveKey, in Views.EncodingKey encodingKey, in Views.ContentKey contentKey, long offset, long length)
             => new(_identity, productCode, new(archiveKey.AsSpan()), offset, length)
             {
                 EncodingKey = new(encodingKey.AsSpan()),
                 ContentKey = new(contentKey.AsSpan())
             };
 
-        public ResourceDescriptor ToDescriptor<A>(string productCode, A archiveKey, long offset = 0, long length = 0)
-            where A : IEncodingKey<A>, allows ref struct
+        public ResourceDescriptor ToDescriptor(string productCode, in Views.EncodingKey archiveKey, long offset = 0, long length = 0)
             => ToDescriptor(productCode, archiveKey, archiveKey, ContentKey.Zero, offset, length);
 
-        public ResourceDescriptor ToDescriptor<A, C>(string productCode, A archiveKey, C contentKey, long offset = 0, long length = 0)
-            where A : IEncodingKey<A>, allows ref struct
-            where C : IContentKey<C>, allows ref struct
+        public ResourceDescriptor ToDescriptor(string productCode, in Views.EncodingKey archiveKey, in Views.ContentKey contentKey, long offset = 0, long length = 0)
             => ToDescriptor(productCode, archiveKey, archiveKey, contentKey, offset, length);
     }
 
@@ -113,9 +107,7 @@ namespace Blizztrack.Framework.TACT.Resources
 
         internal ContentResourceType(in ResourceTypeImpl identity) => _identity = identity;
         
-        public readonly ResourceDescriptor ToDescriptor<C, A>(string productCode, A archiveKey, C contentKey, long offset = 0, long length = 0)
-            where C : IContentKey<C>, allows ref struct
-            where A : IEncodingKey<A>, allows ref struct
+        public readonly ResourceDescriptor ToDescriptor(string productCode, in Views.EncodingKey archiveKey, in Views.ContentKey contentKey, long offset = 0, long length = 0)
             => new(_identity, productCode, new(contentKey.AsSpan()), offset, length)
             {
                 EncodingKey = new(archiveKey.AsSpan()),

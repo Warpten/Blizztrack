@@ -80,9 +80,7 @@ namespace Blizztrack.Framework.Extensions.Services
             return OpenLocalHandle(resourceDescriptor);
         }
 
-        public virtual Task<T> OpenCompressed<E, C, T>(string productCode, E encodingKey, C contentKey, CancellationToken stoppingToken)
-            where E : IEncodingKey<E>, allows ref struct
-            where C : IContentKey<C>, allows ref struct
+        public virtual Task<T> OpenCompressed<T>(string productCode, in TACT.Views.EncodingKey encodingKey, in TACT.Views.ContentKey contentKey, CancellationToken stoppingToken)
             where T : class, IResourceParser<T>
         {
             var compressedDescriptor = ResourceType.Data.ToDescriptor(productCode, encodingKey, contentKey);
@@ -90,9 +88,7 @@ namespace Blizztrack.Framework.Extensions.Services
             return OpenCompressedImpl<T>(compressedDescriptor, decompressedDescriptor, stoppingToken);
         }
 
-        public virtual Task<ResourceHandle> OpenCompressedHandle<E, C>(string productCode, E encodingKey, C contentKey, CancellationToken stoppingToken)
-            where E : IEncodingKey<E>, allows ref struct
-            where C : IContentKey<C>, allows ref struct
+        public virtual Task<ResourceHandle> OpenCompressedHandle(string productCode, in TACT.Views.EncodingKey encodingKey, in TACT.Views.ContentKey contentKey, CancellationToken stoppingToken)
         {
             var compressedDescriptor = ResourceType.Data.ToDescriptor(productCode, encodingKey, contentKey);
             var decompressedDescriptor = ResourceType.Decompressed.ToDescriptor(productCode, encodingKey, contentKey);
@@ -100,13 +96,11 @@ namespace Blizztrack.Framework.Extensions.Services
         }
 
         // VALIDATED API
-        public abstract Task<T> OpenCompressed<E, T>(string productCode, E encodingKey, CancellationToken stoppingToken)
-            where E : IEncodingKey<E>, allows ref struct
+        public abstract Task<T> OpenCompressed<T>(string productCode, in TACT.Views.EncodingKey encodingKey, CancellationToken stoppingToken)
             where T : class, IResourceParser<T>;
 
         // VALIDATED API
-        public Task<ResourceHandle> OpenCompressedHandle<E>(string productCode, E encodingKey, CancellationToken stoppingToken)
-            where E : IEncodingKey<E>, allows ref struct
+        public Task<ResourceHandle> OpenCompressedHandle(string productCode, in TACT.Views.EncodingKey encodingKey, CancellationToken stoppingToken)
             => OpenCompressedHandle(ResourceType.Data.ToDescriptor(productCode, encodingKey), stoppingToken);
 
         public abstract Task<ResourceHandle> OpenCompressedHandle(ResourceDescriptor compressedDescriptor, CancellationToken stoppingToken);

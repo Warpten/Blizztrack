@@ -54,7 +54,7 @@ namespace Blizztrack.Services
             if (results.Count == 0)
                 return default;
 
-            foreach (var encodingKey in results.Keys)
+            foreach (Framework.TACT.Views.EncodingKey encodingKey in results.Keys)
             {
                 var archiveInfo = compoundedIndex.FindEncodingKey(in encodingKey);
                 if (!archiveInfo && fileIndex is not null)

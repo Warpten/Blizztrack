@@ -7,7 +7,7 @@
         /// </summary>
         public readonly ref struct Entry
         {
-            internal Entry(EncodingKeyRef key, int offset, long length, EncodingKey archive)
+            internal Entry(Views.EncodingKey key, int offset, long length, EncodingKey archive)
             {
                 EncodingKey = key;
                 Offset = offset;
@@ -18,7 +18,7 @@
             /// <summary>
             /// The content key for this record.
             /// </summary>
-            public readonly EncodingKeyRef EncodingKey;
+            public readonly Views.EncodingKey EncodingKey;
 
             /// <summary>
             /// The offset, in bytes, of the resource within its archive.
@@ -35,7 +35,7 @@
             /// </summary>
             public readonly EncodingKey Archive;
 
-            public static implicit operator bool(Entry entry) => entry.EncodingKey != default!;
+            public static implicit operator bool(Entry entry) => !!entry.EncodingKey;
         }
 
         /// <summary>
@@ -44,8 +44,7 @@
         /// <typeparam name="T">A type that implements <see cref="IEncodingKey{T}"/>.</typeparam>
         /// <param name="encodingKey">The encoding key to search for.</param>
         /// <returns></returns>
-        public Entry FindEncodingKey<T>(in T encodingKey)
-            where T : notnull, IEncodingKey<T>, allows ref struct;
+        public Entry FindEncodingKey(in Views.EncodingKey encodingKey);
 
         public Entry this[int index] { get; }
         public Entry this[System.Index index] { get; }

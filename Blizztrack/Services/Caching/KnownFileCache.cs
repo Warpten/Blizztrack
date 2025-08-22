@@ -1,6 +1,7 @@
 ﻿using Blizztrack.Framework.TACT;
 using Blizztrack.Framework.TACT.Implementation;
 using Blizztrack.Framework.TACT.Resources;
+using Blizztrack.Framework.TACT.Views;
 using Blizztrack.Options;
 
 using Microsoft.Extensions.Options;
@@ -9,6 +10,9 @@ using ZiggyCreatures.Caching.Fusion;
 
 namespace Blizztrack.Services.Caching
 {
+    using ContentKey = Framework.TACT.Views.ContentKey;
+    using EncodingKey = Framework.TACT.Views.EncodingKey;
+
     /// <summary>
     /// A cache of various known resources.
     /// </summary>
@@ -26,31 +30,36 @@ namespace Blizztrack.Services.Caching
             CacheName = $"cache:{fileIdentifier}",
         });
 
-        public ValueTask<T> Obtain<C, E>(string productCode, C contentKey, E encodingKey, CancellationToken stoppingToken = default)
-            where C : IContentKey<C>
-            where E : IEncodingKey<E>
-            => _cache.GetOrSetAsync($"{fileIdentifier}:{encodingKey.AsHexString()}",
-                token => OpenHandle(productCode, encodingKey, contentKey, token),
-                new FusionCacheEntryOptions() {
-                    Duration = durationGetter(_settings.CurrentValue.Cache.Expirations),
-                }, stoppingToken);
+        public ValueTask<T> Obtain(string productCode, ContentKey contentKey, EncodingKey encodingKey, CancellationToken stoppingToken = default)
+        {
+            var ckey = contentKey.Upgrade();
+            var ekey = encodingKey.Upgrade();
 
-        public ValueTask<T> Obtain<E>(string productCode, E encodingKey, CancellationToken stoppingToken = default)
-            where E : IEncodingKey<E>
-            => _cache.GetOrSetAsync($"{fileIdentifier}:{encodingKey.AsHexString()}",
-                async token => await OpenHandle(productCode, encodingKey, token),
-                new FusionCacheEntryOptions() {
-                    Duration = durationGetter(_settings.CurrentValue.Cache.Expirations),
-                }, stoppingToken);
+            return _cache.GetOrSetAsync($"{fileIdentifier}:{encodingKey.AsHexString()}",
+                        token => OpenHandle(productCode, ekey, ckey, token),
+                        new FusionCacheEntryOptions()
+                        {
+                            Duration = durationGetter(_settings.CurrentValue.Cache.Expirations),
+                        }, stoppingToken);
+        }
 
-        private Task<T> OpenHandle<E, C>(string productCode, E encodingKey, C contentKey, CancellationToken stoppingToken = default)
-            where C : IContentKey<C>
-            where E : IEncodingKey<E>
-            => _resourceLocator.OpenCompressed<E, C, T>(productCode, encodingKey, contentKey, stoppingToken);
+        public ValueTask<T> Obtain(string productCode, in EncodingKey encodingKey, CancellationToken stoppingToken = default)
+        {
+            var ekey = encodingKey.Upgrade();
 
-        private Task<T> OpenHandle<E>(string productCode, E encodingKey, CancellationToken stoppingToken = default)
-            where E : IEncodingKey<E>
-            => _resourceLocator.OpenCompressed<E, T>(productCode, encodingKey, stoppingToken);
+            return _cache.GetOrSetAsync($"{fileIdentifier}:{encodingKey.AsHexString()}",
+                        async token => await OpenHandle(productCode, ekey, token),
+                        new FusionCacheEntryOptions()
+                        {
+                            Duration = durationGetter(_settings.CurrentValue.Cache.Expirations),
+                        }, stoppingToken);
+        }
+
+        private Task<T> OpenHandle(string productCode, in EncodingKey encodingKey, in ContentKey contentKey, CancellationToken stoppingToken = default)
+            => _resourceLocator.OpenCompressed<T>(productCode, encodingKey, contentKey, stoppingToken);
+
+        private Task<T> OpenHandle(string productCode, in EncodingKey encodingKey, CancellationToken stoppingToken = default)
+            => _resourceLocator.OpenCompressed<T>(productCode, encodingKey, stoppingToken);
     }
 
     public class EncodingCache(IServiceProvider serviceProvider) : KnownFileCache<Encoding>(serviceProvider, "encoding", static e => e.Encoding);

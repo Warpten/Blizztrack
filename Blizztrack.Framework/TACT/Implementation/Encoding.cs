@@ -7,6 +7,7 @@ using static Blizztrack.Shared.Extensions.BinarySearchExtensions;
 using Blizztrack.Shared;
 using Blizztrack.Framework.TACT.Resources;
 using Blizztrack.Shared.IO;
+using Blizztrack.Framework.TACT.Views;
 
 namespace Blizztrack.Framework.TACT.Implementation
 {
@@ -51,7 +52,7 @@ namespace Blizztrack.Framework.TACT.Implementation
             });
         }
 
-        private Encoding(IDataSource dataSource, int version, EncodingSchema header, Func<string[]> encodingSpecs)
+        private Encoding(IDataSource dataSource, int _version, EncodingSchema header, Func<string[]> encodingSpecs)
         {
             _dataSupplier = dataSource;
 
@@ -77,7 +78,7 @@ namespace Blizztrack.Framework.TACT.Implementation
         /// <typeparam name="T">The concrete type of the content key.</typeparam>
         /// <param name="contentKey">The content key to look for.</param>
         /// <returns>A record. If the content key can't be found, returns <see langword="default"/>.</returns>
-        public Entry FindContentKey<K>(in K contentKey) where K : IContentKey<K>, IKey, allows ref struct
+        public Entry FindContentKey(in Views.ContentKey contentKey)
         {
             var targetPage = _header.CEKey.ResolvePage(_dataSupplier, contentKey.AsSpan());
             while (targetPage.Length != 0)
@@ -103,7 +104,7 @@ namespace Blizztrack.Framework.TACT.Implementation
         /// </summary>
         /// <param name="encodingKey">The encoding key to look for.</param>
         /// <returns>A record. If the encoding key can't be found, returns <see langword="default"/>.</returns>
-        public Spec FindSpecification<K>(K encodingKey) where K : IEncodingKey<K>, IKey, allows ref struct
+        public Spec FindSpecification(in Views.EncodingKey encodingKey)
         {
             var targetPage = _header.EKeySpec.ResolvePage(_dataSupplier, encodingKey.AsSpan());
             while (targetPage.Length != 0)
@@ -123,7 +124,7 @@ namespace Blizztrack.Framework.TACT.Implementation
             if (fileData.Length < ekeySize + 4 + 5)
                 return new (default, 0);
 
-            var encodingKey = fileData[..ekeySize].AsKey<EncodingKeyRef>();
+            var encodingKey = fileData[..ekeySize].AsKey<Views.EncodingKey>();
             var specIndex = fileData[ekeySize..].ReadInt32BE();
             var encodedFileSize = (ulong) fileData[(ekeySize + 4)..].ReadInt40BE();
 
@@ -237,7 +238,7 @@ namespace Blizztrack.Framework.TACT.Implementation
         /// <remarks>If you want to persist this type, you're meant to store it as your own type. ABI stability is not guaranteed.</remarks>
         public readonly ref struct Spec
         {
-            internal Spec(EncodingKeyRef key, int index, ulong fileSize)
+            internal Spec(Views.EncodingKey key, int index, ulong fileSize)
             {
                 Key = key;
                 Index = index;
@@ -247,7 +248,7 @@ namespace Blizztrack.Framework.TACT.Implementation
             /// <summary>
             /// The encoding key associated with this record.
             /// </summary>
-            public readonly EncodingKeyRef Key;
+            public readonly Views.EncodingKey Key;
 
             /// <summary>
             /// The index of the specification string within the <see cref="Encoding"/> file.
@@ -281,7 +282,7 @@ namespace Blizztrack.Framework.TACT.Implementation
         {
             private readonly StridedReadOnlySpan<byte> _encodingKeys;
 
-            public readonly ContentKeyRef ContentKey;
+            public readonly Views.ContentKey ContentKey;
 
             public readonly int Count => _encodingKeys.Count;
             public readonly ulong FileSize;
@@ -290,7 +291,7 @@ namespace Blizztrack.Framework.TACT.Implementation
             {
                 _encodingKeys = encodingKeys.WithStride(encodingKeys.Length / keyCount);
 
-                ContentKey = contentKey.AsKey<ContentKeyRef>();
+                ContentKey = contentKey.AsKey<Views.ContentKey>();
                 FileSize = fileSize;
             }
 
@@ -306,8 +307,8 @@ namespace Blizztrack.Framework.TACT.Implementation
                 }
             }
 
-            public EncodingKeyRef this[int index] => _encodingKeys[index].AsKey<EncodingKeyRef>();
-            public EncodingKeyRef this[System.Index index] => this[index.GetOffset(Count)];
+            public Views.EncodingKey this[int index] => _encodingKeys[index].AsKey<Views.EncodingKey>();
+            public Views.EncodingKey this[System.Index index] => this[index.GetOffset(Count)];
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public static implicit operator bool(Entry self) => self.Count != 0;
@@ -412,7 +413,7 @@ namespace Blizztrack.Framework.TACT.Implementation
                 _pageCount = (pages.End.Value - pages.Start.Value) / pageSize;
             }
 
-            public Enumerator<E> GetEnumerator() => this;
+            public readonly Enumerator<E> GetEnumerator() => this;
 
             public bool MoveNext()
             {

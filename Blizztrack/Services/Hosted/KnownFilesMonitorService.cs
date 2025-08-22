@@ -40,7 +40,7 @@ namespace Blizztrack.Services.Hosted
                 {
                     var buildConfiguration = await buildTask;
 
-                    if (!databaseContext.KnownResources.Any(e => e.EncodingKey.SequenceEqual(buildConfiguration.Encoding.Encoding.Key)))
+                    if (!databaseContext.KnownResources.Any(e => e.EncodingKey == buildConfiguration.Encoding.Encoding.Key))
                     {
                         databaseContext.KnownResources.Add(new KnownResource()
                         {
@@ -68,7 +68,7 @@ namespace Blizztrack.Services.Hosted
                                 {
                                     Kind = "Root",
                                     ContentKey = buildConfiguration.Root,
-                                    EncodingKey = rootEntry[i].AsOwned(),
+                                    EncodingKey = rootEntry[i].Upgrade(),
                                     Specification = "",
                                 });
                             }

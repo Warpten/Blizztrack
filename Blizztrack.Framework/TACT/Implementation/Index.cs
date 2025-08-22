@@ -81,7 +81,7 @@ namespace Blizztrack.Framework.TACT.Implementation
             get => this[index.GetOffset(Count)];
         }
 
-        public unsafe IIndex.Entry FindEncodingKey<K>(in K encodingKey) where K : notnull, IEncodingKey<K>, allows ref struct
+        public unsafe IIndex.Entry FindEncodingKey(in Views.EncodingKey encodingKey)
         {
             var toc = _dataSource.Slice(_pageCount * _pageSize, _entrySchema.K * _pageCount)
                 .WithStride(_entrySchema.K);
@@ -167,10 +167,10 @@ namespace Blizztrack.Framework.TACT.Implementation
 
     file static class Shared
     {
-        public unsafe static IIndex.Entry ParseGroupIndex(ReadOnlySpan<byte> data, int keyBytes, int offsetBytes, int sizeBytes, ReadOnlySpan<EncodingKey> archiveKeys)
+        public unsafe static IIndex.Entry ParseGroupIndex(ReadOnlySpan<byte> data, int keyBytes, int _offsetBytes, int sizeBytes, ReadOnlySpan<EncodingKey> archiveKeys)
         {
             // [ N - Key ] [ 4 - Size ] [ 2 - Index ] [ 4 - Offset ]
-            var key = data[..keyBytes].AsKey<EncodingKeyRef>();
+            var key = data[..keyBytes].AsKey<Views.EncodingKey>();
             var encodedSize = data.Slice(keyBytes, sizeBytes).ReadInt32BE();
             var archiveIndex = data.Slice(keyBytes + sizeBytes).ReadInt16BE();
             var offset = data.Slice(keyBytes + sizeBytes + 2).ReadInt32BE();
@@ -178,15 +178,15 @@ namespace Blizztrack.Framework.TACT.Implementation
             return new(key, offset, encodedSize, archiveKeys.UnsafeIndex(archiveIndex));
         }
 
-        public static IIndex.Entry ParseFileIndex(ReadOnlySpan<byte> data, int keyBytes, int offsetBytes, int sizeBytes, ReadOnlySpan<EncodingKey> _)
+        public static IIndex.Entry ParseFileIndex(ReadOnlySpan<byte> data, int keyBytes, int _offsetBytes, int sizeBytes, ReadOnlySpan<EncodingKey> _)
         {
             // [ N - Key ] [ 4 - Size ]
             Debug.Assert(sizeBytes >= 4);
 
-            var key = data[..keyBytes].AsKey<EncodingKeyRef>();
+            var key = data[..keyBytes].AsKey<EncodingKey>();
             var encodedSize = data[keyBytes..].ReadInt32BE();
 
-            return new(key, 0, encodedSize, key.AsOwned());
+            return new(key, 0, encodedSize, key);
         }
 
         public unsafe static IIndex.Entry ParseArchiveIndex(ReadOnlySpan<byte> data, int keyBytes, int offsetBytes, int sizeBytes, ReadOnlySpan<EncodingKey> archiveKeys)
@@ -195,7 +195,7 @@ namespace Blizztrack.Framework.TACT.Implementation
             Debug.Assert(sizeBytes >= 4);
             Debug.Assert(offsetBytes >= 4);
 
-            var key = data[..keyBytes].AsKey<EncodingKeyRef>();
+            var key = data[..keyBytes].AsKey<Views.EncodingKey>();
             var encodedSize = data.Slice(keyBytes, sizeBytes).ReadInt32BE();
             var offset = data.Slice(keyBytes + sizeBytes, offsetBytes).ReadInt32BE();
 

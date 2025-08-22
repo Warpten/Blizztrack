@@ -1,59 +1,20 @@
-﻿using System.Diagnostics;
+﻿using Blizztrack.Framework.TACT.Views;
+
+using Pidgin.Expression;
+
+using System;
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
 
 namespace Blizztrack.Framework.TACT
 {
-
     /// <summary>
     /// Tag interface for encoding keys.
     /// </summary>
-    public interface IEncodingKey : IKey;
+    public interface IEncodingKey<T> : IKey<T> where T : struct, IEncodingKey<T>, allows ref struct;
 
-    public interface IEncodingKey<T> : IKey<T>, IEncodingKey where T : IEncodingKey<T>, allows ref struct
-    {
-        public static abstract bool operator ==(T left, T right);
-        public static abstract bool operator !=(T left, T right);
-    }
-
-    /// <summary>
-    /// A stack-allocated, non-owning variation of <see cref="EncodingKey" />.
-    /// </summary>
-    /// <param name="data">The span of data that represents a content key.</param>
-    [DebuggerDisplay("{DebuggerDisplay,nq}")]
-    public readonly ref struct EncodingKeyRef(ReadOnlySpan<byte> data) : IKeyView<EncodingKeyRef, EncodingKey>, IEncodingKey<EncodingKeyRef>
-    {
-        private readonly ReadOnlySpan<byte> _data = data;
-        public byte this[int offset] => _data[offset];
-        public int Length => _data.Length;
-
-        internal unsafe EncodingKeyRef(byte* keyData, int keyLength) : this(new(keyData, keyLength)) { }
-
-        public unsafe ReadOnlySpan<byte> AsSpan() => _data;
-        public bool SequenceEqual<U>(U other) where U : notnull, IKey, allows ref struct => _data.SequenceEqual(other.AsSpan());
-        public string AsHexString() => Convert.ToHexStringLower(_data);
-
-        public static bool operator ==(EncodingKeyRef left, EncodingKeyRef right) => left._data.SequenceEqual(right._data);
-        public static bool operator !=(EncodingKeyRef left, EncodingKeyRef right) => !left._data.SequenceEqual(right._data);
-
-        static EncodingKeyRef IKey<EncodingKeyRef>.From(ReadOnlySpan<byte> data) => new(data);
-
-        public EncodingKey AsOwned() => new(_data);
-
-        public override bool Equals(object? obj) => obj is IKey key && key.AsSpan().SequenceEqual(_data);
-
-        public override int GetHashCode()
-        {
-            var hc = new HashCode();
-            hc.AddBytes(_data);
-            return hc.ToHashCode();
-        }
-
-        public bool Equals(EncodingKeyRef other) => other._data.SequenceEqual(_data);
-
-        public string DebuggerDisplay => AsHexString();
-    }
-
-    [DebuggerDisplay("{DebuggerDisplay,nq}")]
-    public readonly struct EncodingKey(byte[] data) : IOwnedKey<EncodingKey, EncodingKeyRef>, IEncodingKey<EncodingKey>
+    [DebuggerTypeProxy(typeof(DebugView))]
+    public readonly struct EncodingKey(byte[] data) : IEncodingKey<EncodingKey>, IOwnedKey<EncodingKey>
     {
         private readonly byte[] _data = data;
         public byte this[int offset] => _data[offset];
@@ -64,28 +25,71 @@ namespace Blizztrack.Framework.TACT
         public EncodingKey(ReadOnlySpan<byte> data) : this(data.ToArray()) { }
 
         public unsafe ReadOnlySpan<byte> AsSpan() => _data;
-        public bool SequenceEqual<U>(U other) where U : notnull, IKey, allows ref struct => _data.AsSpan().SequenceEqual(other.AsSpan());
         public string AsHexString() => Convert.ToHexStringLower(_data);
-
-        public static bool operator ==(EncodingKey left, EncodingKey right) => left._data?.SequenceEqual(right._data ?? []) ?? (right._data == null);
-        public static bool operator !=(EncodingKey left, EncodingKey right) => !(left == right);
 
         static EncodingKey IKey<EncodingKey>.From(ReadOnlySpan<byte> data) => new(data);
 
-        public override bool Equals(object? obj) => obj is IKey key && key.AsSpan().SequenceEqual(_data);
+        public static implicit operator Views.EncodingKey(EncodingKey self) => new(self._data);
 
-        public override int GetHashCode()
-        {
-            var hc = new HashCode();
-            hc.AddBytes(_data);
-            return hc.ToHashCode();
-        }
 
-        public bool Equals(EncodingKey other) => other._data.SequenceEqual(_data);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static implicit operator bool(EncodingKey self) => !self._data.AsSpan().ContainsAnyExcept([(byte)0]);
 
-        public EncodingKeyRef AsRef() => new(_data);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool operator true(EncodingKey self) => self._data.AsSpan().ContainsAnyExcept([(byte)0]);
 
-        public string DebuggerDisplay => AsHexString();
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool operator false(EncodingKey self) => !self._data.AsSpan().ContainsAnyExcept([(byte)0]);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool operator !(EncodingKey self) => !self._data.AsSpan().ContainsAnyExcept([(byte)0]);
     }
 
+    public static class EncodingKeyExtensions
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool SequenceEqual<T, U>(this T self, in U other)
+            where T : struct, IEncodingKey<T>, allows ref struct
+            where U : struct, IEncodingKey<U>, allows ref struct
+            => self.AsSpan().SequenceEqual(other.AsSpan());
+    }
+
+    namespace Views
+    {
+        /// <summary>
+        /// A stack-allocated, non-owning variation of <see cref="EncodingKey" />.
+        /// </summary>
+        /// <param name="data">The span of data that represents an encoding key.</param>
+        [DebuggerTypeProxy(typeof(DebugView))]
+        public readonly ref struct EncodingKey(ReadOnlySpan<byte> data) : IEncodingKey<EncodingKey>
+        {
+            private readonly ReadOnlySpan<byte> _data = data;
+
+            public byte this[int offset] => _data[offset];
+            public int Length => _data.Length;
+
+            public unsafe ReadOnlySpan<byte> AsSpan() => _data;
+            public string AsHexString() => Convert.ToHexStringLower(_data);
+            public TACT.EncodingKey Upgrade() => new(_data);
+
+            static EncodingKey IKey<EncodingKey>.From(ReadOnlySpan<byte> data) => new(data);
+
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public static bool operator true(EncodingKey self) => self._data.ContainsAnyExcept([(byte)0]);
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public static bool operator false(EncodingKey self) => !self._data.ContainsAnyExcept([(byte)0]);
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public static bool operator !(EncodingKey self) => !self._data.ContainsAnyExcept([(byte)0]);
+        }
+    }
+
+    file class DebugView(ReadOnlySpan<byte> data)
+    {
+        private readonly byte[] _dataBuffer = [.. data];
+
+        public override string ToString() => Convert.ToHexStringLower(_dataBuffer);
+    }
 }

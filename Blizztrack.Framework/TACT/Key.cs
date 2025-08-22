@@ -1,12 +1,13 @@
-﻿using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
-using System.Runtime.Intrinsics.Arm;
-using System.Runtime.Intrinsics.X86;
-using System.Runtime.Intrinsics;
-using System.Runtime.Intrinsics.Wasm;
+﻿using Blizztrack.Shared.Extensions;
+
 using System.Diagnostics;
 using System.Diagnostics.Contracts;
-using Blizztrack.Shared.Extensions;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics;
+using System.Runtime.Intrinsics.Arm;
+using System.Runtime.Intrinsics.Wasm;
+using System.Runtime.Intrinsics.X86;
 
 namespace Blizztrack.Framework.TACT
 {
@@ -18,65 +19,51 @@ namespace Blizztrack.Framework.TACT
         public ReadOnlySpan<byte> AsSpan();
         public string AsHexString();
 
-        public bool SequenceEqual<U>(U other) where U : notnull, IKey, allows ref struct;
-
         public byte this[int index] { get; }
         public int Length { get; }
     }
 
     public record struct SizeAware<T>(T Key, long Size)
-        where T : IKey<T>
+        where T : struct, IKey<T>
     {
         public static implicit operator T(SizeAware<T> self) => self.Key;
     }
 
     public record struct SizedKeyPair<T, U>(SizeAware<T> Content, SizeAware<U> Encoding)
-        where T : IContentKey<T>
-        where U : IEncodingKey<U>;
+        where T : struct, IContentKey<T>
+        where U : struct, IEncodingKey<U>;
 
     public record struct KeyPair<T, U>(T Content, U Encoding)
-        where T : IContentKey<T>
-        where U : IEncodingKey<U>;
+        where T : struct, IContentKey<T>
+        where U : struct, IEncodingKey<U>
+    {
+        public static implicit operator T(KeyPair<T, U> self) => self.Content;
+        public static implicit operator U(KeyPair<T, U> self) => self.Encoding;
+    }
 
     /// <summary>
     /// Typed equivalent of <see cref="IKey"/> that also requires the implementation to be <see cref="IEquatable{T}"/>.
     /// </summary>
     /// <typeparam name="T">The concrete implementation type.</typeparam>
-    public interface IKey<T> : IKey, IEquatable<T> where T : notnull, IKey<T>, allows ref struct
+    public interface IKey<T> : IKey where T : struct, IKey<T>, allows ref struct
     {
-        /// <summary>
-        /// TODO: Should this be public?
-        /// </summary>
-        /// <param name="data"></param>
-        /// <returns></returns>
         public static abstract T From(ReadOnlySpan<byte> data);
 
-        public static abstract bool operator ==(T left, T right);
-        public static abstract bool operator !=(T left, T right);
-    }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static virtual bool operator true(T self) => self.AsSpan().ContainsAnyExcept([(byte)0]);
 
-    /// <summary>
-    /// A key that is actually a view over a sequence of bytes. Storage for this key is not owned.
-    /// <para>
-    /// Implementations should be ref-like types.
-    /// </para>
-    /// </summary>
-    /// <typeparam name="T">The non-owning concrete implementation.</typeparam>
-    /// <typeparam name="U">An owning equivalent to <typeparamref name="T"/>.</typeparam>
-    public interface IKeyView<T, U> : IKey<T> where T : notnull, IKeyView<T, U>, allows ref struct
-    {
-        /// <summary>
-        /// Takes ownership of the data this key references and returns an owning instance of a key type.
-        /// </summary>
-        /// <returns></returns>
-        public U AsOwned();
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static virtual bool operator false(T self) => !self.AsSpan().ContainsAnyExcept([(byte)0]);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static virtual bool operator !(T self) => !self.AsSpan().ContainsAnyExcept([(byte)0]);
     }
 
     /// <summary>
     /// A key whose storage for bytes is an array of owned memory.
     /// </summary>
     /// <typeparam name="T">The concrete type of the key.</typeparam>
-    public interface IOwnedKey<T> : IKey<T> where T : notnull, IOwnedKey<T>
+    public interface IOwnedKey<T> : IKey<T> where T : struct, IOwnedKey<T>
     {
         /// <summary>
         /// An empty value for this type.
@@ -248,15 +235,6 @@ namespace Blizztrack.Framework.TACT
         }
     }
 
-    public interface IOwnedKey<T, U> : IOwnedKey<T>
-        where T : notnull, IOwnedKey<T, U>
-        where U : IKey<U>, allows ref struct
-    {
-        public U AsRef();
-
-        public static virtual implicit operator U(T self) => self.AsRef();
-    }
-
     public static class KeyExtensions
     {
         /// <summary>
@@ -266,7 +244,7 @@ namespace Blizztrack.Framework.TACT
         /// <param name="str">An ASCII hex string to parse.</param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining), Pure]
-        public static T? AsKeyString<T>(this ReadOnlySpan<byte> str) where T : notnull, IOwnedKey<T>
+        public static T? AsKeyString<T>(this ReadOnlySpan<byte> str) where T : struct, IOwnedKey<T>
             => T.FromString(str);
 
         /// <summary>
@@ -276,7 +254,7 @@ namespace Blizztrack.Framework.TACT
         /// <param name="str">An ASCII hex string to parse.</param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining), Pure]
-        public static T[] AsKeyString<T>(this ReadOnlySpan<byte> str, byte delimiter) where T : notnull, IOwnedKey<T>
+        public static T[] AsKeyString<T>(this ReadOnlySpan<byte> str, byte delimiter) where T : struct, IOwnedKey<T>
             => T.FromString(str, delimiter);
 
         /// <summary>
@@ -286,7 +264,7 @@ namespace Blizztrack.Framework.TACT
         /// <param name="bytes">The bytes to treat as a <typeparamref name="T"/></param>.
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining), Pure]
-        public static T AsKey<T>(this ReadOnlySpan<byte> bytes) where T : notnull, IKey<T>, allows ref struct
+        public static T AsKey<T>(this ReadOnlySpan<byte> bytes) where T : struct, IKey<T>, allows ref struct
             => T.From(bytes);
 
         /// <summary>
@@ -297,18 +275,18 @@ namespace Blizztrack.Framework.TACT
         /// <param name="bytes"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining), Pure]
-        public static (T, U) AsKeyStringPair<T, U>(this ReadOnlySpan<byte> bytes)
-            where T : IOwnedKey<T>
-            where U : IOwnedKey<U>
+        public static KeyPair<C, E> AsKeyStringPair<C, E>(this ReadOnlySpan<byte> bytes)
+            where C : struct, IContentKey<C>, IOwnedKey<C>
+            where E : struct, IEncodingKey<E>, IOwnedKey<E>
         {
             var tokens = bytes.Split((byte) ' ', true);
             Debug.Assert(tokens.Length == 2);
 
-            return (T.FromString(bytes[tokens[0]]), U.FromString(bytes[tokens[1]]));
+            return new(C.FromString(bytes[tokens[0]]), E.FromString(bytes[tokens[1]]));
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining), Pure]
-        public static T AsKey<T>(this string @string) where T : IOwnedKey<T>
+        public static T AsKey<T>(this string @string) where T : struct, IOwnedKey<T>
             => T.FromString(@string);
     }
 }

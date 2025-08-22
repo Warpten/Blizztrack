@@ -56,7 +56,7 @@ namespace Blizztrack.Services.Hosted
                     var queryEndpoint = _settingsMonitor.CurrentValue.Ribbit.Endpoint;
                     var monitoredProducts = _settingsMonitor.CurrentValue.Products;
 
-                    var summaryTable = await Commands.GetEndpointSummary(queryEndpoint.Host, queryEndpoint.Port, stoppingToken);
+                    var summaryTable = await Commands.GetEndpointSummary(queryEndpoint.Host, queryEndpoint.Port, stoppingToken: stoppingToken);
 
                     // Add "summary" as a fake product.
                     if (await IsUpdatePublishable("summary", summaryTable.SequenceNumber, e => e.Version, databaseContext, stoppingToken))
@@ -167,7 +167,7 @@ namespace Blizztrack.Services.Hosted
                 ("blizztrack.ribbit.product", productCode),
                 ("blizztrack.ribbit.sequence", sequenceNumber));
 
-            var cdns = await Commands.GetProductCDNs(productCode, queryEndpoint.Host, queryEndpoint.Port, stoppingToken);
+            var cdns = await Commands.GetProductCDNs(productCode, queryEndpoint.Host, queryEndpoint.Port, stoppingToken: stoppingToken);
             if (cdns.SequenceNumber == sequenceNumber)
             {
                 var isInsertion = cacheEntry is null;
@@ -232,7 +232,7 @@ namespace Blizztrack.Services.Hosted
                 ("blizztrack.ribbit.product", productCode),
                 ("blizztrack.ribbit.sequence", sequenceNumber));
 
-            var versions = await Commands.GetProductVersions(productCode, queryEndpoint.Host, queryEndpoint.Port, stoppingToken);
+            var versions = await Commands.GetProductVersions(productCode, queryEndpoint.Host, queryEndpoint.Port, stoppingToken: stoppingToken);
             if (versions.SequenceNumber == sequenceNumber)
             {
                 var isInsertion = cacheEntry is null;
@@ -303,7 +303,7 @@ namespace Blizztrack.Services.Hosted
                 ("blizztrack.ribbit.sequence", sequenceNumber));
 
 
-            var bgdl = await Commands.GetProductBGDL(productCode, queryEndpoint.Host, queryEndpoint.Port, stoppingToken);
+            var bgdl = await Commands.GetProductBGDL(productCode, queryEndpoint.Host, queryEndpoint.Port, stoppingToken: stoppingToken);
             if (bgdl.SequenceNumber == sequenceNumber)
             {
                 var isInsertion = cacheEntry is null;

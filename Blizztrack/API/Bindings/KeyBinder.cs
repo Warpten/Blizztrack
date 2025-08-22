@@ -15,7 +15,7 @@ using System.Reflection;
 
 namespace Blizztrack.API.Bindings
 {
-    public class KeyBinder<T> : IModelBinder where T : IOwnedKey<T>
+    public class KeyBinder<T> : IModelBinder where T : struct, IOwnedKey<T>
     {
         public class Mapper : ITypeMapper
         {
@@ -45,7 +45,7 @@ namespace Blizztrack.API.Bindings
             }
 
             var value = keyValue.FirstValue.AsKey<T>();
-            if (value == T.Zero)
+            if (!value)
             {
                 bindingContext.ModelState.TryAddModelError(modelName, "Key must be an hex string.");
                 return Task.CompletedTask;

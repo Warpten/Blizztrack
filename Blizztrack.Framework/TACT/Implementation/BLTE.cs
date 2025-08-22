@@ -99,7 +99,7 @@ namespace Blizztrack.Framework.TACT.Implementation
 
             // 3. Parse the header.
             var dataSource = fileHeader.ToDataSource();
-            var (flags, chunks, encodingKey) = ParseHeader(dataSource, 0, 0);
+            var (flags, chunks, _encodingKey) = ParseHeader(dataSource, 0, 0);
 
             // 4. Read the spec string.
             if (specification is not null)
@@ -304,13 +304,12 @@ namespace Blizztrack.Framework.TACT.Implementation
         /// If the decompressed size does not match <paramref name="decompressedSize"/>, <see langword="default"/> is returned.
         /// </remarks>
         /// <returns>A schema that can then be used to parse a file.</returns>
-        public unsafe static BLTE ParseSchema<K>(ReadOnlySpan<byte> fileData, K? encodingKey, long decompressedSize = 0)
-            where K : notnull, IEncodingKey<K>, allows ref struct
+        public unsafe static BLTE ParseSchema(ReadOnlySpan<byte> fileData, in Views.EncodingKey encodingKey, long decompressedSize = 0)
         {
             var (flags, chunks, expectedChecksum) = ParseHeader(fileData);
             EnsureSchemaValidity(chunks, decompressedSize);
 
-            var checksumMatches = encodingKey?.SequenceEqual(expectedChecksum) ?? true;
+            var checksumMatches = !encodingKey || encodingKey.SequenceEqual(expectedChecksum);
             var sizeMatches = decompressedSize != 0 && chunks[^1].Decompressed.End.Value == decompressedSize;
 
             if (chunks.Length == 0 || !checksumMatches || !sizeMatches)
@@ -354,8 +353,7 @@ namespace Blizztrack.Framework.TACT.Implementation
         /// If the decompressed size does not match <paramref name="decompressedSize"/>, <see langword="default"/> is returned.
         /// </remarks>
         /// <returns>A schema that can then be used to parse a file.</returns>
-        public static BLTE ParseSchema<K>(ResourceHandle resourceHandle, K? encodingKey, long decompressedSize)
-            where K : notnull, IEncodingKey<K>, allows ref struct
+        public static BLTE ParseSchema(ResourceHandle resourceHandle, in Views.EncodingKey encodingKey, long decompressedSize)
         {
             using var memoryManager = resourceHandle.ToMappedDataSource();
 
@@ -420,8 +418,7 @@ namespace Blizztrack.Framework.TACT.Implementation
             {
                 var chunkCompressedSize = chunkData[i].ReadInt32BE();
                 var chunkDecompressedSize = chunkData[i][4..].ReadInt32BE();
-                var checksum = chunkData[i].Slice(4 + 4, 16);
-                // TODO: Validate checksum ?
+                _ = chunkData[i].Slice(4 + 4, 16); // Checksum. TODO: Validate?
 
                 Range compressedRange = new(compressedStart + 1, compressedStart + chunkCompressedSize);
                 Range decompressedRange = new(decompressedStart, decompressedStart + chunkDecompressedSize);
@@ -494,5 +491,3 @@ namespace Blizztrack.Framework.TACT.Implementation
         }
     }
 }
-
-#pragma warning restore BT003 // Type or member is obsolete

@@ -84,7 +84,7 @@ namespace Blizztrack.Framework.TACT.Implementation
             Entries = entries;
         }
 
-        public ref readonly Entry FindContentKey<C>(in C contentKey) where C : IContentKey<C>, allows ref struct
+        public ref readonly Entry FindContentKey(in Views.ContentKey contentKey)
         {
             for (var i = 0; i < Entries.Length; ++i)
             {

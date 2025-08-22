@@ -55,8 +55,7 @@ namespace Blizztrack.API
             return new EncodingMetadata(encodingFile.Entries.Pages.Count, encodingFile.Specifications.Pages.Count);
         }
 
-        private ValueTask<Encoding> OpenEncoding<E>(string product, E encodingKey, CancellationToken stoppingToken)
-            where E : IEncodingKey<E>, IKey<E>
+        private ValueTask<Encoding> OpenEncoding(string product, in Framework.TACT.Views.EncodingKey encodingKey, CancellationToken stoppingToken)
             => encodingRepository.Obtain(product, encodingKey, stoppingToken);
 
         /// <summary>
