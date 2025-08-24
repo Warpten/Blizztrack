@@ -30,7 +30,7 @@ namespace Blizztrack.Persistence.Translators
                     null);
             }
 
-            if (method.Name == "SequenceEqual" && arguments.Count == 2)
+            if (method.Name == nameof(EncodingKeyExtensions.SequenceEqual) && arguments.Count == 2)
             {
                 return _sqlExpressionFactory.Equal(arguments[0], arguments[1]);
             }

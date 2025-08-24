@@ -169,19 +169,19 @@ namespace Blizztrack.Framework.TACT.Implementation
 
         public interface IChunkSpec
         {
-            public void Accept<T>(T visitor, int compressedSize) where T : IVisitor, allows ref struct
-                => Accept(visitor, new TraversalContext()
+            public void Accept<T>(ref T visitor, int compressedSize) where T : IVisitor, allows ref struct
+                => Accept(ref visitor, new TraversalContext()
                 {
                     Size = compressedSize
                 });
 
-            void Accept<T>(T visitor, TraversalContext context) where T : IVisitor, allows ref struct;
+            void Accept<T>(ref T visitor, TraversalContext context) where T : IVisitor, allows ref struct;
         }
 
         //< Describes a chunk of unknown size that is just the decompressed data.
         internal readonly record struct FlatChunkSpec : IChunkSpec
         {
-            readonly void IChunkSpec.Accept<T>(T visitor, TraversalContext context) where T : default
+            readonly void IChunkSpec.Accept<T>(ref T visitor, TraversalContext context) where T : default
                 => visitor.OnRawChunk(context.Size);
 
             public override readonly string ToString() => "n";
@@ -190,7 +190,7 @@ namespace Blizztrack.Framework.TACT.Implementation
         //< Describes a chunk of unknown size that is compressed using ZLib with the provided parameters.
         internal readonly record struct CompressionSpec(int Level = 9, int Window = 15) : IChunkSpec
         {
-            readonly void IChunkSpec.Accept<T>(T visitor, TraversalContext context) where T : default
+            readonly void IChunkSpec.Accept<T>(ref T visitor, TraversalContext context) where T : default
                 => visitor.OnCompressedChunk(Level, Window, context.Size);
 
             public override readonly string ToString()
@@ -213,11 +213,11 @@ namespace Blizztrack.Framework.TACT.Implementation
         //  by the given specification.
         internal readonly record struct EncryptedChunkSpec(string EncryptionKey, string EncryptionIV, IChunkSpec Spec) : IChunkSpec
         {
-            readonly void IChunkSpec.Accept<T>(T visitor, TraversalContext context) where T : default
+            readonly void IChunkSpec.Accept<T>(ref T visitor, TraversalContext context) where T : default
             {
                 // Push the encryption state on the stack
                 visitor.BeginEncryption(EncryptionKey, EncryptionIV);
-                Spec.Accept(visitor, context);
+                Spec.Accept(ref visitor, context);
                 visitor.EndEncryption();
             }
 
@@ -228,7 +228,7 @@ namespace Blizztrack.Framework.TACT.Implementation
         //< Applies the given size to a specific chunk
         internal readonly record struct SizeAwareChunkSpec(int Size, int Count, IChunkSpec Spec) : IChunkSpec
         {
-            readonly void IChunkSpec.Accept<T>(T visitor, TraversalContext context) where T : default
+            readonly void IChunkSpec.Accept<T>(ref T visitor, TraversalContext context) where T : default
             {
                 ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(context.Size, 0, nameof(context.Size));
 
@@ -240,12 +240,12 @@ namespace Blizztrack.Framework.TACT.Implementation
                     // Update context with the size of every chunk.
                     context.Size = Size;
                     for (var i = 0; i < chunkCount; ++i)
-                        Spec.Accept(visitor, context);
+                        Spec.Accept(ref visitor, context);
 
                     // And finally the size of the final chunk.
                     context.Size = finalChunkSize;
                     if (finalChunkSize != 0)
-                        Spec.Accept(visitor, context);
+                        Spec.Accept(ref visitor, context);
 
                     // Done consuming.
                     context.Size = 0;
@@ -253,14 +253,14 @@ namespace Blizztrack.Framework.TACT.Implementation
                 else if (Size == GREEDY)
                 {
                     // Consume all.
-                    Spec.Accept(visitor, context);
+                    Spec.Accept(ref visitor, context);
                     context.Size = 0;
                 }
                 else
                 {
                     // A repeating chunk of this.Size bytes, repeating Count times.
                     for (var i = 0; i < Count; ++i)
-                        Spec.Accept(visitor, context);
+                        Spec.Accept(ref visitor, context);
                 }
             }
 
@@ -300,10 +300,10 @@ namespace Blizztrack.Framework.TACT.Implementation
         {
             private readonly IChunkSpec[] _specs = [.. specs];
 
-            readonly void IChunkSpec.Accept<T>(T visitor, TraversalContext context) where T : default
+            readonly void IChunkSpec.Accept<T>(ref T visitor, TraversalContext context) where T : default
             {
                 for (var i = 0; i < _specs.Length; ++i)
-                    _specs[i].Accept(visitor, context);
+                    _specs[i].Accept(ref visitor, context);
             }
 
             public override string ToString()

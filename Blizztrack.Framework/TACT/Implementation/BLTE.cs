@@ -101,18 +101,18 @@ namespace Blizztrack.Framework.TACT.Implementation
             var dataSource = fileHeader.ToDataSource();
             var (flags, chunks, _encodingKey) = ParseHeader(dataSource, 0, 0);
 
+            Debug.Assert(decompressedSize == 0 || decompressedSize == chunks[^1].Decompressed.End.Value);
+
             // 4. Read the spec string.
             if (specification is not null)
             {
                 var chunkSpec = Spec.Parse(specification);
 
                 // 5. Update chunks with the compression modes.
-                var visitor = new SpecVisitor(chunks.AsBackingArray(), headerSize);
-
-                chunkSpec.Accept(visitor, (int)sourceStream.Length - headerSize);
+                var visitor = new SpecVisitor(chunks.AsBackingArray());
+                chunkSpec.Accept(ref visitor, chunks[^1].Decompressed.End.Value);
             }
 
-            Debug.Assert(decompressedSize == 0 || decompressedSize == chunks[^1].Decompressed.End.Value);
             return new BLTE(flags, chunks[^1].Decompressed.End.Value, [.. chunks]);
         }
 
@@ -167,11 +167,11 @@ namespace Blizztrack.Framework.TACT.Implementation
             }
         }
 
-        private ref struct SpecVisitor(Span<ChunkInfo> chunks, int headerSize) : Spec.IVisitor
+        private ref struct SpecVisitor(Span<ChunkInfo> chunks) : Spec.IVisitor
         {
             private readonly Span<ChunkInfo> _chunks = chunks;
             private int _chunkIndex = 0;
-            private int _compressedCursor = headerSize;
+            private int _decompressedCursor = 0;
 
             public void BeginEncryption(string key, string iv)
                 => throw new NotImplementedException("Encrypted BLTEs are not supported.");
@@ -195,10 +195,10 @@ namespace Blizztrack.Framework.TACT.Implementation
             private void UpdateCompressedRange(int chunkSize)
             {
                 ref var currentChunk = ref _chunks[_chunkIndex];
-                Debug.Assert(currentChunk.Compressed.Start.Value == _compressedCursor + 1
-                    && currentChunk.Compressed.End.Value == _compressedCursor + chunkSize);
+                Debug.Assert(currentChunk.Decompressed.Start.Value == _decompressedCursor
+                    && currentChunk.Decompressed.End.Value == _decompressedCursor + chunkSize);
 
-                _compressedCursor += 1 + chunkSize;
+                _decompressedCursor += chunkSize;
                 ++_chunkIndex;
             }
         }

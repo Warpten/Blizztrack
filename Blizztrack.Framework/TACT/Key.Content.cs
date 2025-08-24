@@ -32,7 +32,7 @@ namespace Blizztrack.Framework.TACT
 
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static implicit operator bool(ContentKey self) => !self._data.AsSpan().ContainsAnyExcept([(byte)0]);
+        public static implicit operator bool(ContentKey self) => self._data.AsSpan().ContainsAnyExcept([(byte)0]);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool operator true(ContentKey self) => self._data.AsSpan().ContainsAnyExcept([(byte)0]);
