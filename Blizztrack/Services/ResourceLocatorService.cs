@@ -8,6 +8,7 @@ using Blizztrack.Services.Caching;
 
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Metadata.Internal;
 using Microsoft.Extensions.Options;
 
 using Polly;
@@ -56,13 +57,6 @@ namespace Blizztrack.Services
 
             var scope = serviceProvider.CreateScope();
             _databaseContext = scope.ServiceProvider.GetRequiredService<DatabaseContext>();
-        }
-
-        public override Task<T> OpenCompressed<T>(string productCode, in Views.EncodingKey encodingKey, in Views.ContentKey contentKey, CancellationToken stoppingToken)
-        {
-            using var activity = BeginActivity("blizztrack.resources.open_compressed", productCode, encodingKey, contentKey);
-
-            return base.OpenCompressed<T>(productCode, encodingKey, contentKey, stoppingToken);
         }
 
         public override Task<ResourceHandle> OpenCompressedHandle(string productCode, in Views.EncodingKey encodingKey, in Views.ContentKey contentKey, CancellationToken stoppingToken)
@@ -129,14 +123,14 @@ namespace Blizztrack.Services
             return [.. endpoints, .. configurationEndpoints];
         }
 
-        protected override ResourceHandle OpenLocalHandle(ResourceDescriptor resourceDescriptor)
+        public override ResourceHandle OpenLocalHandle(ResourceDescriptor resourceDescriptor)
             => _localCache.OpenHandle(resourceDescriptor);
 
-        protected override void CreateLocalHandle(ResourceDescriptor resourceDescriptor, byte[] fileData)
-            => _localCache.Write(resourceDescriptor.LocalPath, fileData);
-
-        public override Task<T> OpenCompressed<T>(string productCode, in Views.EncodingKey encodingKey, CancellationToken stoppingToken)
-            => OpenCompressedImpl<T>(ResourceType.Data.ToDescriptor(productCode, encodingKey), stoppingToken);
+        public override ResourceHandle CreateLocalHandle(ResourceDescriptor resourceDescriptor, byte[] fileData)
+        {
+            _localCache.Write(resourceDescriptor.LocalPath, fileData);
+            return OpenLocalHandle(resourceDescriptor);
+        }
 
         public override async Task<ResourceHandle> OpenCompressedHandle(ResourceDescriptor compressedDescriptor, CancellationToken stoppingToken)
         {
@@ -195,6 +189,15 @@ namespace Blizztrack.Services
                 var compressedHandle = await OpenHandle(compressed, stoppingToken);
                 return T.OpenCompressedResource(compressedHandle);
             }
+        }
+
+        public override ContentKey ResolveContentKey(in Views.EncodingKey encodingKey)
+        {
+            var ekey = encodingKey.Upgrade();
+
+            var knownResource = _databaseContext.KnownResources
+                .SingleOrDefault(e => e.EncodingKey.SequenceEqual(ekey));
+            return knownResource?.ContentKey ?? default;
         }
     }
 }

@@ -3,11 +3,7 @@ using Blizztrack.Framework.TACT.Implementation;
 using Blizztrack.Framework.TACT.Resources;
 using Blizztrack.Shared.IO;
 
-using Microsoft.Extensions.Logging;
-
 using Polly;
-using Polly.Retry;
-using Polly.Telemetry;
 
 using System.Net;
 using System.Net.Http.Headers;
@@ -30,26 +26,15 @@ namespace Blizztrack.Framework.Extensions.Services
     /// <param name="clientFactory"></param>
     /// <param name="localCache"></param>
     /// <param name="serviceProvider"></param>
-    public abstract class AbstractResourceLocatorService : IResourceLocator
+    public abstract class AbstractResourceLocatorService(IHttpClientFactory clientFactory) : IResourceLocator
     {
-        private readonly IHttpClientFactory _clientFactory;
+        private readonly IHttpClientFactory _clientFactory = clientFactory;
 
-        protected AbstractResourceLocatorService(IHttpClientFactory clientFactory)
-            => _clientFactory = clientFactory;
+        public abstract ContentKey ResolveContentKey(in TACT.Views.EncodingKey encodingKey);
 
-        /// <summary>
-        /// Opens a handle to a resource on disk.
-        /// </summary>
-        /// <param name="resourceDescriptor">A resource descriptor.</param>
-        /// <returns>A handle to the resource on disk.</returns>
-        protected abstract ResourceHandle OpenLocalHandle(ResourceDescriptor resourceDescriptor);
+        public abstract ResourceHandle OpenLocalHandle(ResourceDescriptor resourceDescriptor);
 
-        /// <summary>
-        /// Creates a local handle on disk.
-        /// </summary>
-        /// <param name="resourceDescriptor">A resource descriptor.</param>
-        /// <param name="fileData">The file's (optionally compressed) data.</param>
-        protected abstract void CreateLocalHandle(ResourceDescriptor resourceDescriptor, byte[] fileData);
+        public abstract ResourceHandle CreateLocalHandle(ResourceDescriptor resourceDescriptor, byte[] fileData);
 
         /// <summary>
         /// Opens a handle to a resource. Attempts to download the resource if it can't be found locally.
@@ -80,24 +65,12 @@ namespace Blizztrack.Framework.Extensions.Services
             return OpenLocalHandle(resourceDescriptor);
         }
 
-        public virtual Task<T> OpenCompressed<T>(string productCode, in TACT.Views.EncodingKey encodingKey, in TACT.Views.ContentKey contentKey, CancellationToken stoppingToken)
-            where T : class, IResourceParser<T>
-        {
-            var compressedDescriptor = ResourceType.Data.ToDescriptor(productCode, encodingKey, contentKey);
-            var decompressedDescriptor = ResourceType.Decompressed.ToDescriptor(productCode, encodingKey, contentKey);
-            return OpenCompressedImpl<T>(compressedDescriptor, decompressedDescriptor, stoppingToken);
-        }
-
         public virtual Task<ResourceHandle> OpenCompressedHandle(string productCode, in TACT.Views.EncodingKey encodingKey, in TACT.Views.ContentKey contentKey, CancellationToken stoppingToken)
         {
             var compressedDescriptor = ResourceType.Data.ToDescriptor(productCode, encodingKey, contentKey);
             var decompressedDescriptor = ResourceType.Decompressed.ToDescriptor(productCode, encodingKey, contentKey);
             return OpenCompressedHandleImpl(compressedDescriptor, decompressedDescriptor, stoppingToken);
         }
-
-        // VALIDATED API
-        public abstract Task<T> OpenCompressed<T>(string productCode, in TACT.Views.EncodingKey encodingKey, CancellationToken stoppingToken)
-            where T : class, IResourceParser<T>;
 
         // VALIDATED API
         public Task<ResourceHandle> OpenCompressedHandle(string productCode, in TACT.Views.EncodingKey encodingKey, CancellationToken stoppingToken)
@@ -118,22 +91,6 @@ namespace Blizztrack.Framework.Extensions.Services
 
             decompressedHandle.Create(decompressedData);
             return decompressedHandle;
-        }
-
-        // VALIDATED IMPLEMENTATION DETAIL
-        private async Task<T> OpenCompressedImpl<T>(ResourceDescriptor compressed, ResourceDescriptor decompressed, CancellationToken stoppingToken)
-            where T : class, IResourceParser<T>
-        {
-            var decompressedHandle = OpenLocalHandle(decompressed);
-            if (decompressedHandle != default && decompressedHandle.Exists)
-                return T.OpenResource(decompressedHandle);
-
-            // Create the decompressed resource now.
-            var compressedHandle = await OpenHandle(compressed, stoppingToken);
-            var decompressedData = BLTE.Parse(compressedHandle);
-
-            CreateLocalHandle(decompressed, decompressedData);
-            return T.OpenResource(OpenLocalHandle(decompressed));
         }
 
         protected abstract ResiliencePipeline<ContentQueryResult> AcquisitionPipeline { get; }
