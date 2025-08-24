@@ -16,6 +16,9 @@ using Newtonsoft.Json.Linq;
 using NSwag.Annotations;
 
 using System.ComponentModel;
+using System.Text.Json;
+
+using static Blizztrack.API.FileSystemController;
 
 namespace Blizztrack.API
 {
@@ -167,15 +170,10 @@ namespace Blizztrack.API
             if (descriptors.Length == 0)
                 return TypedResults.NotFound();
 
-            if (Request.Method[0] == 'h') // Sue me
-            {
-                Response.Headers["X-Blizztrack-FileDataID"] = fileDataID.ToString();
-                Response.Headers["X-Blizztrack-Archives"] = descriptors.Select(d => d.Archive.AsHexString()).ToArray();
-                Response.Headers["X-Blizztrack-Offsets"] = descriptors.Select(d => d.Offset.ToString()).ToArray();
-                Response.Headers["X-Blizztrack-Length"] = descriptors.Select(d => d.Length.ToString()).ToArray();
-
+            Response.Headers["X-Blizztrack-FileDataID"] = fileDataID.ToString();
+            Response.Headers["X-Blizztrack-Metadata"] = ToMetadata(fileSystem, descriptors);
+            if (Request.Method[0] == 'H') // Sue me
                 return TypedResults.Ok();
-            }
 
             foreach (var descriptor in descriptors)
             {
@@ -191,19 +189,34 @@ namespace Blizztrack.API
             return TypedResults.NotFound();
         }
 
+        private static string ToMetadata(IFileSystem fs, params ReadOnlySpan<ResourceDescriptor> resourceDescriptors)
+        {
+            var descriptors = new Descriptor[resourceDescriptors.Length];
+
+            for (var i = 0; i < resourceDescriptors.Length; ++i)
+            {
+                ref readonly var desc = ref resourceDescriptors[i];
+
+                descriptors[i] = new(desc.EncodingKey.AsHexString(), desc.ContentKey.AsHexString(),
+                    fs.GetCompressionSpec(desc.EncodingKey),
+                    new(desc.Archive.AsHexString(), desc.Offset, desc.Length));
+            }
+
+            return /*Convert.ToBase64String(System.Text.Encoding.ASCII.GetBytes(*/JsonSerializer.Serialize(descriptors)/*))*/;
+        }
+
+        public record struct Descriptor(string EncodingKey, string ContentKey, string? Specification, Descriptor.Entry Archive)
+        {
+            public record struct Entry(string Name, long Offset, long Size);
+        }
+
         private async Task<IResult> OpenEncodingKey(IFileSystem fileSystem, EncodingKey encodingKey, CancellationToken stoppingToken, bool raw)
         {
             var descriptor = fileSystem.OpenEncodingKey(encodingKey);
 
-            if (Request.Method[0] == 'h') // Sue me
-            {
-                Response.Headers["X-Blizztrack-EncodingKey"] = encodingKey.ToString();
-                Response.Headers["X-Blizztrack-Archive"] = descriptor.Archive.AsHexString();
-                Response.Headers["X-Blizztrack-Offset"] = descriptor.Offset.ToString();
-                Response.Headers["X-Blizztrack-Length"] = descriptor.Length.ToString();
-
+            Response.Headers["X-Blizztrack-Metadata"] = ToMetadata(fileSystem, descriptor);
+            if (Request.Method[0] == 'H') // Sue me
                 return TypedResults.Ok();
-            }
 
             var compressionSpec = fileSystem.GetCompressionSpec(encodingKey);
             if (compressionSpec is null)
@@ -222,15 +235,9 @@ namespace Blizztrack.API
             if (descriptors.Length == 0)
                 return TypedResults.NotFound();
 
-            if (Request.Method[0] == 'h') // Sue me
-            {
-                Response.Headers["X-Blizztrack-ContentKey"] = contentKey.AsHexString();
-                Response.Headers["X-Blizztrack-Archives"] = descriptors.Select(d => d.Archive.AsHexString()).ToArray();
-                Response.Headers["X-Blizztrack-Offsets"] = descriptors.Select(d => d.Offset.ToString()).ToArray();
-                Response.Headers["X-Blizztrack-Length"] = descriptors.Select(d => d.Length.ToString()).ToArray();
-
+            Response.Headers["X-Blizztrack-Metadata"] = ToMetadata(fileSystem, descriptors);
+            if (Request.Method[0] == 'H') // Sue me
                 return TypedResults.Ok();
-            }
 
             foreach (var descriptor in descriptors)
             {
