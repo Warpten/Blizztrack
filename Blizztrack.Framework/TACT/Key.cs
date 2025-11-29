@@ -100,6 +100,7 @@ namespace Blizztrack.Framework.TACT
 
             try
             {
+                // Note: not FromString here!
                 return T.From(Convert.FromHexString(sourceChars));
             }
             catch (FormatException)
@@ -285,10 +286,22 @@ namespace Blizztrack.Framework.TACT
             return new(C.FromString(bytes[tokens[0]]), E.FromString(bytes[tokens[1]]));
         }
 
+        /// <summary>
+        /// Parses the given hex string into an implementation of <see cref="IOwnedKey{T}"/>.
+        /// </summary>
+        /// <typeparam name="T">The type of key to produce</typeparam>
+        /// <param name="@string">The hex string to parse.</param>.
+        /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining), Pure]
         public static T AsKey<T>(this string @string) where T : struct, IOwnedKey<T>
             => T.FromString(@string);
 
+        /// <summary>
+        /// Parses the given hex string into an implementation of <see cref="IOwnedKey{T}"/>.
+        /// </summary>
+        /// <typeparam name="T">The type of key to produce</typeparam>
+        /// <param name="@string">The hex string to parse.</param>.
+        /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining), Pure]
         public static T AsKey<T>(this scoped ref ReadOnlySpan<char> @string) where T : struct, IOwnedKey<T>
             => T.FromString(@string);
