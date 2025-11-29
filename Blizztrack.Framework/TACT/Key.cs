@@ -288,5 +288,9 @@ namespace Blizztrack.Framework.TACT
         [MethodImpl(MethodImplOptions.AggressiveInlining), Pure]
         public static T AsKey<T>(this string @string) where T : struct, IOwnedKey<T>
             => T.FromString(@string);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining), Pure]
+        public static T AsKey<T>(this scoped ref ReadOnlySpan<char> @string) where T : struct, IOwnedKey<T>
+            => T.FromString(@string);
     }
 }
