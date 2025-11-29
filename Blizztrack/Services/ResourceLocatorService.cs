@@ -66,22 +66,6 @@ namespace Blizztrack.Services
             return base.OpenCompressedHandle(productCode, encodingKey, contentKey, stoppingToken);
         }
 
-        // VALIDATED IMPLEMENTATION DETAIL
-        private async Task<T> OpenCompressedImpl<T>(ResourceDescriptor compressed, ResourceDescriptor decompressed, CancellationToken stoppingToken)
-            where T : class, IResourceParser<T>
-        {
-            var decompressedHandle = _localCache.OpenHandle(decompressed);
-            if (decompressedHandle != default && decompressedHandle.Exists)
-                return T.OpenResource(decompressedHandle);
-
-            // Create the decompressed resource now.
-            var compressedHandle = await OpenHandle(compressed, stoppingToken);
-            var decompressedData = BLTE.Parse(compressedHandle);
-
-            _localCache.Write(decompressed.LocalPath, decompressedData);
-            return T.OpenResource(_localCache.OpenHandle(decompressed));
-        }
-
         protected override ResiliencePipeline<ContentQueryResult> AcquisitionPipeline { get; } = new ResiliencePipelineBuilder<ContentQueryResult>()
             .AddConcurrencyLimiter(permitLimit: 20, queueLimit: 10)
             .AddRetry(new RetryStrategyOptions<ContentQueryResult>()
@@ -166,29 +150,6 @@ namespace Blizztrack.Services
 
             decompressedHandle.Create(decompressedData);
             return decompressedHandle;
-        }
-
-        // VALIDATED IMPLEMENTATION DETAIL
-        private async Task<T> OpenCompressedImpl<T>(ResourceDescriptor compressed, CancellationToken stoppingToken)
-            where T : class, IResourceParser<T>
-        {
-            // Look for this resource in the well known table.
-            // If it's well known, create a file on disk if it doesn't exist, decompressed the resource
-            // in it, and call the decompressed loader. Otherwise, call the compressed loader.
-            var knownResource = _databaseContext.KnownResources
-                .SingleOrDefault(e => e.EncodingKey.SequenceEqual(compressed.Archive));
-
-            if (knownResource is not null)
-            {
-                var decompressed = ResourceType.Decompressed.ToDescriptor(compressed.Product, knownResource.EncodingKey, knownResource.ContentKey);
-                return await OpenCompressedImpl<T>(compressed, decompressed, stoppingToken);
-            }
-            else
-            {
-                // Not a known resource... Just use the compressed handler.
-                var compressedHandle = await OpenHandle(compressed, stoppingToken);
-                return T.OpenCompressedResource(compressedHandle);
-            }
         }
 
         public override ContentKey ResolveContentKey(in Views.EncodingKey encodingKey)

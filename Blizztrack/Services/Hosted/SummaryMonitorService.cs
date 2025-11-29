@@ -101,7 +101,7 @@ namespace Blizztrack.Services.Hosted
                         if (productState == null || productState.CDN != sequenceNumbers[(int) SequenceNumberType.CDN])
                         {
                             var (newProduct, eventSource) = await UpdateCDN(productCode, queryEndpoint, sequenceNumbers[(int) SequenceNumberType.CDN],
-                                productState, databaseContext, stoppingToken);
+                                productState, stoppingToken);
                             if (newProduct is not null)
                                 databaseContext.Products.Add(newProduct);
 
@@ -112,7 +112,7 @@ namespace Blizztrack.Services.Hosted
                         if (productState == null || productState.Version != sequenceNumbers[(int) SequenceNumberType.Version])
                         {
                             var (newProduct, eventSource) = await UpdateVersion(productCode, queryEndpoint, sequenceNumbers[(int) SequenceNumberType.Version],
-                                productState, databaseContext, stoppingToken);
+                                productState, stoppingToken);
 
                             if (newProduct is not null)
                                 databaseContext.Products.Add(newProduct);
@@ -124,7 +124,7 @@ namespace Blizztrack.Services.Hosted
                         if (productState == null || productState.BGDL != sequenceNumbers[(int) SequenceNumberType.BGDL])
                         {
                             var (newProduct, eventSource) = await UpdateBGDL(productCode, queryEndpoint, sequenceNumbers[(int) SequenceNumberType.BGDL],
-                                productState, databaseContext, stoppingToken);
+                                productState, stoppingToken);
 
                             if (newProduct is not null)
                                 databaseContext.Products.Add(newProduct);
@@ -160,7 +160,6 @@ namespace Blizztrack.Services.Hosted
         /// <returns>A product to insert. If the product needed to be updated, it will be.</returns>
         private async Task<(Product?, Func<ValueTask>)> UpdateCDN(string productCode, Options.Endpoint queryEndpoint, int sequenceNumber,
             Product? cacheEntry, 
-            DatabaseContext databaseContext,
             CancellationToken stoppingToken)
         {
             using var _ = StartTaggedActivity("blizztrack.ribbit.cdns", 
@@ -225,7 +224,6 @@ namespace Blizztrack.Services.Hosted
         /// <returns>A product to insert. If the product needed to be updated, it will be.</returns>
         private async Task<(Product?, Func<ValueTask>)> UpdateVersion(string productCode, Options.Endpoint queryEndpoint, int sequenceNumber,
             Product? cacheEntry,
-            DatabaseContext databaseContext,
             CancellationToken stoppingToken)
         {
             using var _ = StartTaggedActivity("blizztrack.ribbit.cdns",
@@ -295,7 +293,6 @@ namespace Blizztrack.Services.Hosted
         /// <returns>A product to insert. If the product needed to be updated, it will be.</returns>
         private async Task<(Product?, Func<ValueTask>)> UpdateBGDL(string productCode, Options.Endpoint queryEndpoint, int sequenceNumber,
             Product? cacheEntry,
-            DatabaseContext databaseContext,
             CancellationToken stoppingToken)
         {
             using var _ = StartTaggedActivity("blizztrack.ribbit.bgdl",
