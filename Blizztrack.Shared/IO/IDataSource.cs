@@ -7,5 +7,7 @@
 
         public byte this[Index index] { get; }
         public byte this[int index] { get; }
+
+        public int Length { get; }
     }
 }

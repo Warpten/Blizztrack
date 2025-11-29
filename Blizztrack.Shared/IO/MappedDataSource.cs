@@ -65,5 +65,6 @@ namespace Blizztrack.Shared.IO
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get => _dataBuffer[index.GetOffset((int) _accessor.SafeMemoryMappedViewHandle.ByteLength)];
         }
+        public int Length => (int) _accessor.SafeMemoryMappedViewHandle.ByteLength;
     }
 }

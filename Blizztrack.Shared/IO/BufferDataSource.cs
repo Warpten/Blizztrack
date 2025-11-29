@@ -26,7 +26,9 @@ namespace Blizztrack.Shared.IO
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get => dataBuffer[index];
         }
+        public int Length { get; } = dataBuffer.Length;
     }
+
     public readonly ref struct SpanDataSource(ReadOnlySpan<byte> dataBuffer) : IDataSource
     {
         private readonly ReadOnlySpan<byte> _dataBuffer = dataBuffer;
@@ -53,6 +55,7 @@ namespace Blizztrack.Shared.IO
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get => _dataBuffer[index];
         }
+        public int Length { get; } = dataBuffer.Length;
     }
 
     public static partial class BufferDataSourceExtensions
