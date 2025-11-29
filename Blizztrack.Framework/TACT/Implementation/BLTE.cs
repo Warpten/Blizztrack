@@ -31,32 +31,47 @@ namespace Blizztrack.Framework.TACT.Implementation
     /// cross-using this object. You can rely on
     /// <see cref="Encoding.FindSpecification{T}(T)"/> for this.</remarks>
     /// <example>
+    /// Example of use of the single-step implementation. This is the simplest possible
+    /// use of this class and the one you should default to.
     /// <code>
-    /// // Example of use of the two-steps implementation.
+    /// ResourceHandle handle = ...;
+    /// var decompressedBytes = BLTE.Parse(handle);
+    /// </code>
+    /// </example>
+    /// <example>
+    /// Example use of the two-steps implementation.
+    /// <code>
     /// ResourceHandle handle = ...;
     /// var schema = BLTE.ParseSchema(handle);
     /// var decompressedBytes = schema.Execute(handle);
+    /// </code>
+    /// </example>
+    /// <example>
+    /// Example of potentially incorrect use of the two-steps implementation.
     /// 
-    /// // Example of incorrect use of the two-steps implementation.
+    /// Note that the call to <see cref="Execute(ResourceHandle)"/> happens on another
+    /// resource handle than the one that was used to parse. This is not recommended,
+    /// but is fine if you can guarantee that both resources are using the same schema.
+    /// 
+    /// See Remarks for more details.
+    /// 
+    /// <code>
     /// ResourceHandle schemaHandle = ...;
     /// ResourceHandle extractionHandle = ...;
     /// Debug.Assert(schemaHandle != extractionHandle);
     /// var schema = BLTE.ParseSchema(handle);
-    /// // Note that this is called on a different resource handle than the one used to parse.
-    /// // This is usually not recommended but will be fine if you can guarantee that both
-    /// // resources are using the same schema.
     /// var decompressedBytes = schema.Execute(extractionHandle);
+    /// </code>
+    /// </example>
+    /// <example>
+    /// This final example shows you how to extract only part of a file, provided you 
+    /// know the range of decompressed bytes that interests you.
     /// 
-    /// // Example of use of the single-step implementation
-    /// ResourceHandle handle = ...;
-    /// var decompressedBytes = BLTE.Parse(handle);
-    /// 
-    /// // You are also able to extract part of a file. In that situation, you must use the two-phase extraction logic:
+    /// <code>
     /// ResourceHandle handle = ...;
     /// var schema = BLTE.ParseSchema(handle);
-    /// // The ranges provided below are relative to the decompressed file.
-    /// var decompressedFragment = schema.Execute(handle, 0..1024);
-    /// var decompressedFragment = schema.Execute(handle, 100..200);
+    /// var firstDecompressedFragment = schema.Execute(handle, 0..1024);
+    /// var secondDecompressedFragment = schema.Execute(handle, 100..200);
     /// </code>
     /// </example>
     public readonly struct BLTE
@@ -99,8 +114,9 @@ namespace Blizztrack.Framework.TACT.Implementation
 
             // 3. Parse the header.
             var dataSource = fileHeader.ToDataSource();
-            var (flags, chunks, _encodingKey) = ParseHeader(dataSource, 0, 0);
+            var (flags, chunks, _encodingKey) = ParseHeader(dataSource, compressedBase: 0, decompressedBase: 0, decompressedSize, false);
 
+            Debug.Assert(flags == 0x10, "Avowed BLTEs are not supported");
             Debug.Assert(decompressedSize == 0 || decompressedSize == chunks[^1].Decompressed.End.Value);
 
             // 4. Read the spec string.
@@ -211,9 +227,8 @@ namespace Blizztrack.Framework.TACT.Implementation
         /// <param name="resourceHandle">The resource to parse</param>
         /// <param name="decompressedSize">The expected decompressed size of the file.</param>
         /// <returns>A byte buffer containing the decompressed file.</returns>
-        public static byte[] Parse(ResourceHandle resourceHandle, long decompressedSize = 0)
+        public static byte[] Parse(ResourceHandle resourceHandle, int decompressedSize = 0)
             => ParseSchema(resourceHandle, decompressedSize).Execute(resourceHandle);
-
 
         /// <summary>
         /// Attempts to parse a BLTE schema out of the given span. 
@@ -226,7 +241,7 @@ namespace Blizztrack.Framework.TACT.Implementation
         /// If the decompressed size does not match <paramref name="decompressedSize"/>, <see langword="default"/> is returned.
         /// </remarks>
         /// <returns>A schema that can then be used to parse a file.</returns>
-        public unsafe static BLTE ParseSchema(ResourceHandle resourceHandle, long decompressedSize = 0)
+        public unsafe static BLTE ParseSchema(ResourceHandle resourceHandle, int decompressedSize = 0)
         {
             using var memoryManager = resourceHandle.ToMappedDataSource();
 
@@ -304,60 +319,21 @@ namespace Blizztrack.Framework.TACT.Implementation
         /// If the decompressed size does not match <paramref name="decompressedSize"/>, <see langword="default"/> is returned.
         /// </remarks>
         /// <returns>A schema that can then be used to parse a file.</returns>
-        public unsafe static BLTE ParseSchema(ReadOnlySpan<byte> fileData, in Views.EncodingKey encodingKey, long decompressedSize = 0)
+        public unsafe static BLTE ParseSchema(ReadOnlySpan<byte> fileData,
+            int decompressedSize,
+            in Views.EncodingKey encodingKey = default)
         {
-            var (flags, chunks, expectedChecksum) = ParseHeader(fileData);
+            var requiresChecksum = !!encodingKey;
+            var (flags, chunks, expectedChecksum) = ParseHeader(fileData, 0, 0, decompressedSize, requiresChecksum);
             EnsureSchemaValidity(chunks, decompressedSize);
 
-            var checksumMatches = !encodingKey || encodingKey.SequenceEqual(expectedChecksum);
+            var checksumMatches = !requiresChecksum || encodingKey.SequenceEqual(expectedChecksum);
             var sizeMatches = decompressedSize != 0 && chunks[^1].Decompressed.End.Value == decompressedSize;
 
             if (chunks.Length == 0 || !checksumMatches || !sizeMatches)
                 return default;
 
-            return new BLTE(flags, chunks[^1].Decompressed.End.Value, chunks);
-        }
-
-        /// <summary>
-        /// Attempts to parse a BLTE schema out of the given span. 
-        /// </summary>
-        /// <typeparam name="K">The type of encoding key.</typeparam>
-        /// <param name="fileData">A contiguous span of memory representing the file's data.</param>
-        /// <param name="decompressedSize">The expected decompressed size of the file. If zero, this parameter is ignored</param>
-        /// <remarks>
-        /// If the decompressed size does not match <paramref name="decompressedSize"/>, <see langword="default"/> is returned.
-        /// </remarks>
-        /// <returns>A schema that can then be used to parse a file.</returns>
-        public unsafe static BLTE ParseSchema(ReadOnlySpan<byte> fileData, long decompressedSize = 0)
-        {
-            var (flags, chunks, _) = ParseHeader(fileData);
-            EnsureSchemaValidity(chunks, decompressedSize);
-
-            var sizeMatches = decompressedSize == 0 || chunks[^1].Decompressed.End.Value == decompressedSize;
-
-            if (chunks.Length == 0 || !sizeMatches)
-                return default;
-
             return new (flags, chunks[^1].Decompressed.End.Value, chunks);
-        }
-
-        /// <summary>
-        /// Attempts to parse a BLTE schema out of the given span. 
-        /// </summary>
-        /// <typeparam name="K">The type of encoding key.</typeparam>
-        /// <param name="resourceHandle">A handle over a resource.</param>
-        /// <param name="encodingKey">An encoding key that should match the calculated checksum of the file.</param>
-        /// <param name="decompressedSize">The expected decompressed size of the file. If zero, this parameter is ignored</param>
-        /// <remarks>
-        /// If the checksum calculated does not match <paramref name="encodingKey"/>, <see langword="default" /> is returned.
-        /// If the decompressed size does not match <paramref name="decompressedSize"/>, <see langword="default"/> is returned.
-        /// </remarks>
-        /// <returns>A schema that can then be used to parse a file.</returns>
-        public static BLTE ParseSchema(ResourceHandle resourceHandle, in Views.EncodingKey encodingKey, long decompressedSize)
-        {
-            using var memoryManager = resourceHandle.ToMappedDataSource();
-
-            return ParseSchema(memoryManager[..], encodingKey, decompressedSize);
         }
 
         [Conditional("DEBUG")]
@@ -393,7 +369,11 @@ namespace Blizztrack.Framework.TACT.Implementation
         /// <param name="decompressedBase"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static unsafe (int, List<ChunkInfo>, EncodingKey) ParseHeader<T>(T fileData, int compressedBase, int decompressedBase)
+        private static unsafe (int, List<ChunkInfo>, EncodingKey) ParseHeader<T>(T fileData,
+            int compressedBase,
+            int decompressedBase,
+            int decompressedSize,
+            bool hashHeader)
             where T : IDataSource, allows ref struct
         {
             var magic = fileData[..4];
@@ -401,12 +381,27 @@ namespace Blizztrack.Framework.TACT.Implementation
                 return (0, [], default);
 
             var headerSize = fileData[4..].ReadInt32BE();
+            if (headerSize == 0)
+            {
+                Debug.Assert(compressedBase == 0, "Non-chunked BLTEs can only exist as single-file archives (hopefully)");
+                Debug.Assert(decompressedBase == 0, "Non-chunked BLTEs can only exist as single-file archives (hopefully)");
+                Debug.Assert(decompressedSize != 0, "Non-chunked BLTEs can only exist as single-file archives (hopefully), therefore there size must be known.");
+
+                // Handle old chunkless BLTEs
+                Range compressedRange = new(compressedBase + 8, compressedBase + 8 + fileData.Length);
+                Range decompressedRange = new(0, decompressedSize);
+                return (0, [new(compressedRange, decompressedRange, null)], default);
+            }
+
             var flagsChunkCount = fileData[8..].ReadUInt32BE();
 
-            var expectedChecksum = MD5.HashData(fileData[..headerSize]);
+            var expectedChecksum = hashHeader ? new EncodingKey(MD5.HashData(fileData[..headerSize])) : default;
 
             var flags = (int)flagsChunkCount >> 24;
             var chunkCount = (int)(flagsChunkCount & 0x00FFFFFFu);
+
+            if (chunkCount == 0)
+                return (flags, [], expectedChecksum);
 
             var chunks = new List<ChunkInfo>(chunkCount);
 
@@ -429,18 +424,30 @@ namespace Blizztrack.Framework.TACT.Implementation
                 decompressedStart = decompressedRange.End.Value;
             }
 
-            return (flags, chunks, new EncodingKey(expectedChecksum));
+            return (flags, chunks, expectedChecksum);
         }
 
-        private static unsafe (int, ChunkInfo[], EncodingKey) ParseHeader(ReadOnlySpan<byte> fileData, int compressedBase = 0, int decompressedBase = 0)
+        private static unsafe (int, ChunkInfo[], EncodingKey) ParseHeader(ReadOnlySpan<byte> fileData,
+            int compressedBase = 0,
+            int decompressedBase = 0,
+            int decompressedSize = 0,
+            bool hashHeader = false)
         {
-            var (flags, chunks, encodingKey) = ParseHeader(fileData.ToDataSource(), compressedBase, decompressedBase);
+            var (flags, chunks, encodingKey) = ParseHeader(fileData.ToDataSource(), compressedBase, decompressedBase, decompressedSize, hashHeader);
             if (flags == 0)
-                return (flags, [], default);
+                return (flags, [.. chunks], encodingKey);
 
+            var finalChunks = FinalizeChunks(fileData, chunks);
+            return (flags, finalChunks, encodingKey);
+        }
+
+        private static unsafe ChunkInfo[] FinalizeChunks(ReadOnlySpan<byte> fileData,
+            List<ChunkInfo> chunks)
+        {
             // This is another loop that abuses cache locality
             // but also has special logic to flatten BLTE nested chunks.
-            for (var i = 0; i < chunks.Count; ++i)
+            var chunkCount = chunks.Count;
+            for (var i = 0; i < chunkCount; ++i)
             {
                 // Because Span's indexer still does bounds checking.
                 ref var currentChunk = ref Unsafe.Add(ref MemoryMarshal.GetReference(CollectionsMarshal.AsSpan(chunks)), i);
@@ -455,7 +462,11 @@ namespace Blizztrack.Framework.TACT.Implementation
                         currentChunk.Parser = &ParseCompressed;
                         break;
                     case (byte)'F':
-                        var (_, nestedChunks, _) = ParseHeader(fileData[currentChunk.Compressed], currentChunk.Compressed.Start.Value, currentChunk.Decompressed.Start.Value);
+                        var (_, nestedChunks, _) = ParseHeader(fileData[currentChunk.Compressed],
+                            compressedBase: currentChunk.Compressed.Start.Value,
+                            decompressedBase: currentChunk.Decompressed.Start.Value,
+                            decompressedSize: currentChunk.DecompressedSize,
+                            hashHeader: false);
 
                         // Copy-insert everything - Not using RemoveAt + InsertRange because...
                         // One regrow, two memmoves. More efficient on codegen (one less memmove incurred by RemoveAt)
@@ -466,13 +477,16 @@ namespace Blizztrack.Framework.TACT.Implementation
                         nestedChunks.AsSpan().CopyTo(targetSpan.Slice(i, nestedChunks.Length)); // 3. And insert the new ones, overwriting the current object in the process.
 
                         i += nestedChunks.Length - 1; // Skip past the inserted chunks.
+                        chunkCount += nestedChunks.Length - 1; // Increment the total size.
                         break;
                     default:
                         throw new IndexOutOfRangeException(nameof(compressionMode));
                 }
+
+                Debug.Assert(chunkCount == chunks.Count);
             }
 
-            return (flags, [.. chunks], encodingKey);
+            return [.. chunks];
         }
 
         [DebuggerDisplay("{DebuggerDisplay,nq}")]
