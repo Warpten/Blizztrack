@@ -117,8 +117,8 @@ namespace Blizztrack.Framework.Extensions.Services
             var transferContext = new TransferContext()
             {
                 Client = _clientFactory.CreateClient(),
-                Range = descriptor.Offset != 0
-                    ? new RangeHeaderValue(descriptor.Offset, descriptor.Offset + descriptor.Length - 1)
+                Range = descriptor.Location.Offset != 0
+                    ? new RangeHeaderValue(descriptor.Location.Offset, descriptor.Location.Offset + descriptor.Location.Length - 1)
                     : default,
                 Endpoints = hosts.GetEnumerator(),
             };

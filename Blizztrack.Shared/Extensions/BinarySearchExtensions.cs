@@ -294,7 +294,7 @@ namespace Blizztrack.Shared.Extensions
             }
 
             Debug.Assert(left <= array.Length);
-            return left;
+            return -1;
         }
     }
 }

@@ -56,10 +56,10 @@ namespace Blizztrack.Services.Caching
         }
 
         private Task<T> OpenHandle(string productCode, in EncodingKey encodingKey, in ContentKey contentKey, CancellationToken stoppingToken = default)
-            => _resourceLocator.OpenCompressed<T>(productCode, encodingKey, contentKey, stoppingToken);
+            => _resourceLocator.OpenCompressed(productCode, encodingKey, contentKey, stoppingToken).ContinueWith(task => T.OpenResource(task.Result));
 
         private Task<T> OpenHandle(string productCode, in EncodingKey encodingKey, CancellationToken stoppingToken = default)
-            => _resourceLocator.OpenCompressed<T>(productCode, encodingKey, stoppingToken);
+            => _resourceLocator.OpenCompressed(productCode, encodingKey, stoppingToken).ContinueWith(task => T.OpenResource(task.Result));
     }
 
     public class EncodingCache(IServiceProvider serviceProvider) : KnownFileCache<Encoding>(serviceProvider, "encoding", static e => e.Encoding);

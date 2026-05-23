@@ -119,10 +119,10 @@ namespace Blizztrack.Services
         public override async Task<ResourceHandle> OpenCompressedHandle(ResourceDescriptor compressedDescriptor, CancellationToken stoppingToken)
         {
             // Look for this resource in the well known table.
-            // If it's well known, creeate a file on disk if it doesn't exist, decompressed the resource
+            // If it's well known, create a file on disk if it doesn't exist, decompressed the resource
             // in it, and call the decompressed loader. Otherwise, call the compressed loader.
             var knownResource = _databaseContext.KnownResources
-                .SingleOrDefault(e => e.EncodingKey.SequenceEqual(compressedDescriptor.Archive));
+                .SingleOrDefault(e => e.EncodingKey.SequenceEqual(compressedDescriptor.Location.Archive));
 
             if (knownResource is not null)
             {

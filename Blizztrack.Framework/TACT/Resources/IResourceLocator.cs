@@ -72,60 +72,54 @@ namespace Blizztrack.Framework.TACT.Resources
         /// <summary>
         /// Opens a compressed resource.
         /// </summary>
-        /// <typeparam name="T">The type of object to return, which must implement <see cref="IResourceParser{T}"/>.</typeparam>
         /// <param name="productCode">A string identifying the product that caused this call.</param>
         /// <param name="encodingKey">The encoding key of the file.</param>
         /// <param name="stoppingToken">A cancellation token that will be signaled of the operation needs to be canceled.</param>
-        /// <returns></returns>
+        /// <returns>A handle to the resource.</returns>
         /// <exception cref="OperationCanceledException">If the operation represented by this method needs to be cancelled.</exception>
-        public static Task<T> OpenCompressed<T>(this IResourceLocator locator,
+        public static Task<ResourceHandle> OpenCompressed(this IResourceLocator locator,
             string productCode, in Views.EncodingKey encodingKey, CancellationToken stoppingToken = default)
-            where T : class, IResourceParser<T>
         {
             // Look for this resource in the well known table.
             // If it's well known, create a file on disk if it doesn't exist, decompressed the resource
             // in it, and call the decompressed loader. Otherwise, call the compressed loader.
             var contentKey = locator.ResolveContentKey(encodingKey);
             if (contentKey)
-                return OpenCompressed<T>(locator, productCode, encodingKey, contentKey, stoppingToken);
+                return OpenCompressed(locator, productCode, encodingKey, contentKey, stoppingToken);
 
             // Not a known resource... Just use the compressed handler.
             var compressedHandle = ResourceType.Data.ToDescriptor(productCode, encodingKey);
-            return locator.OpenHandle(compressedHandle, stoppingToken)
-                .ContinueWith(result => T.OpenCompressedResource(result.Result));
+            return locator.OpenHandle(compressedHandle, stoppingToken);
         }
 
         /// <summary>
         /// Opens a compressed resource.
         /// </summary>
-        /// <typeparam name="T">The type of object to return, which must implement <see cref="IResourceParser{T}"/>.</typeparam>
         /// <param name="productCode">A string identifying the product that caused this call.</param>
         /// <param name="encodingKey">The encoding key of the compressed file.</param>
         /// <param name="contentKey">The content key of the decompressed file.</param>
         /// <param name="stoppingToken">A cancellation token that will be signaled of the operation needs to be canceled.</param>
-        /// <returns></returns>
+        /// <returns>A handle to the resource.</returns>
         /// <exception cref="OperationCanceledException">If the operation represented by this method needs to be cancelled.</exception>
-        public static Task<T> OpenCompressed<T>(this IResourceLocator locator, string productCode, in Views.EncodingKey encodingKey, in Views.ContentKey contentKey, CancellationToken stoppingToken = default)
-            where T : class, IResourceParser<T>
+        public static Task<ResourceHandle> OpenCompressed(this IResourceLocator locator, string productCode, in Views.EncodingKey encodingKey, in Views.ContentKey contentKey, CancellationToken stoppingToken = default)
         {
             var compressedDescriptor = ResourceType.Data.ToDescriptor(productCode, encodingKey, contentKey);
             var decompressedDescriptor = ResourceType.Decompressed.ToDescriptor(productCode, encodingKey, contentKey);
-            return OpenCompressedImpl<T>(locator, compressedDescriptor, decompressedDescriptor, stoppingToken);
+            return OpenCompressedImpl(locator, compressedDescriptor, decompressedDescriptor, stoppingToken);
         }
 
-        private static async Task<T> OpenCompressedImpl<T>(IResourceLocator locator, ResourceDescriptor compressed, ResourceDescriptor decompressed, CancellationToken stoppingToken)
-            where T : class, IResourceParser<T>
+        private static async Task<ResourceHandle> OpenCompressedImpl(IResourceLocator locator, ResourceDescriptor compressed, ResourceDescriptor decompressed, CancellationToken stoppingToken)
         {
             var decompressedHandle = locator.OpenLocalHandle(decompressed);
             if (decompressedHandle != default && decompressedHandle.Exists)
-                return T.OpenResource(decompressedHandle);
+                return decompressedHandle;
 
             // Create the decompressed resource now.
             var compressedHandle = await locator.OpenHandle(compressed, stoppingToken);
             var decompressedData = BLTE.Parse(compressedHandle);
 
             var localHandle = locator.CreateLocalHandle(decompressed, decompressedData);
-            return T.OpenResource(localHandle);
+            return localHandle;
         }
     }
 

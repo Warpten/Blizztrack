@@ -72,7 +72,7 @@ namespace Blizztrack.Framework.TACT.Implementation
                 // Regardless of wether or not this page is parsed we need to advance the read cursor.
                 var blockData = parseCursor.Advance(blockSize);
 
-                // Read a FDID delta array from the file (+1 implied) and adjust instantly.
+                // Read a FDID delta array from the file (+1 implied).
                 var fdids = blockData.ReadInt32LE(recordCount);
 #if DEBUG
                 for (var i = 1; i < fdids.Length; ++i)

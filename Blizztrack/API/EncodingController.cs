@@ -13,6 +13,8 @@ using System.Runtime.CompilerServices;
 
 using static Blizztrack.API.EncodingController.EncodingEntry;
 
+using Views = Blizztrack.Framework.TACT.Views;
+
 namespace Blizztrack.API
 {
     [ApiVersion(1.0)]
@@ -55,7 +57,7 @@ namespace Blizztrack.API
             return new EncodingMetadata(encodingFile.Entries.Pages.Count, encodingFile.Specifications.Pages.Count);
         }
 
-        private ValueTask<Encoding> OpenEncoding(string product, in Framework.TACT.Views.EncodingKey encodingKey, CancellationToken stoppingToken)
+        private ValueTask<Encoding> OpenEncoding(string product, in Views.EncodingKey encodingKey, CancellationToken stoppingToken)
             => encodingRepository.Obtain(product, encodingKey, stoppingToken);
 
         /// <summary>

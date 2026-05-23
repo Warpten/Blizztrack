@@ -152,7 +152,7 @@ namespace Blizztrack.Framework.TACT.Implementation
                 return _pageIndex < _pageCount;
             }
 
-            public unsafe IIndex.Entry Current
+            public IIndex.Entry Current
             {
                 [MethodImpl(MethodImplOptions.AggressiveInlining)]
                 get
@@ -167,7 +167,7 @@ namespace Blizztrack.Framework.TACT.Implementation
 
     file static class Shared
     {
-        public unsafe static IIndex.Entry ParseGroupIndex(ReadOnlySpan<byte> data, int keyBytes, int _offsetBytes, int sizeBytes, ReadOnlySpan<EncodingKey> archiveKeys)
+        public static IIndex.Entry ParseGroupIndex(ReadOnlySpan<byte> data, int keyBytes, int _offsetBytes, int sizeBytes, ReadOnlySpan<EncodingKey> archiveKeys)
         {
             // [ N - Key ] [ 4 - Size ] [ 2 - Index ] [ 4 - Offset ]
             var key = data[..keyBytes].AsKey<Views.EncodingKey>();
@@ -189,7 +189,7 @@ namespace Blizztrack.Framework.TACT.Implementation
             return new(key, 0, encodedSize, key);
         }
 
-        public unsafe static IIndex.Entry ParseArchiveIndex(ReadOnlySpan<byte> data, int keyBytes, int offsetBytes, int sizeBytes, ReadOnlySpan<EncodingKey> archiveKeys)
+        public static IIndex.Entry ParseArchiveIndex(ReadOnlySpan<byte> data, int keyBytes, int offsetBytes, int sizeBytes, ReadOnlySpan<EncodingKey> archiveKeys)
         {
             // [ N - Key ] [ 4 - Size ] [ 4 - Offset ]
             Debug.Assert(sizeBytes >= 4);

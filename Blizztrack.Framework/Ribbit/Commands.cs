@@ -1,5 +1,6 @@
 ﻿using Blizztrack.Framework.TACT;
 using Blizztrack.Framework.TACT.Configuration;
+using Blizztrack.Shared.Extensions;
 
 using System.Buffers;
 using System.Net.Sockets;
@@ -22,13 +23,13 @@ namespace Blizztrack.Framework.Ribbit
         /// <returns></returns>
         /// <exception cref="ArgumentOutOfRangeException">If the given version can't be handled.</exception>
         /// <exception cref="OperationCanceledException">If a cancellation request was issued before the operation completed.</exception>
-        public static async Task<Summary> GetEndpointSummary(string host, int port = 1119,
+        public static async Task<Summary> GetEndpointSummary(HttpClient client, string host, int port = 1119,
             PV version = PV.BestAvailable,
             CancellationToken stoppingToken = default)
             => new (version switch
             {
-                PV.V1 => await Execute(host, port, "v1/summary", new MultipartCommandExecutor("summary"u8), ParseSummary, stoppingToken),
-                PV.V2 or PV.BestAvailable => await Execute(host, port, "v2/summary", new SimpleCommandExecutor(), ParseSummary, stoppingToken),
+                PV.V1 => await Execute(client, host, port, "v1/summary", new MultipartCommandExecutor("summary"u8), ParseSummary, stoppingToken),
+                PV.V2 or PV.BestAvailable => await Execute(client, host, port, "v2/summary", new SimpleCommandExecutor(), ParseSummary, stoppingToken),
                 _ => throw new ArgumentOutOfRangeException(nameof(version))
             });
 
@@ -43,13 +44,13 @@ namespace Blizztrack.Framework.Ribbit
         /// <returns></returns>
         /// <exception cref="ArgumentOutOfRangeException">If the given version can't be handled.</exception>
         /// <exception cref="OperationCanceledException">If a cancellation request was issued before the operation completed.</exception>
-        public static async Task<CDN> GetProductCDNs(string product, string host, int port,
+        public static async Task<CDN> GetProductCDNs(HttpClient client, string product, string host, int port,
             PV version = PV.BestAvailable,
             CancellationToken stoppingToken = default)
             => new (version switch
             {
-                PV.V1 => await Execute(host, port, $"v1/products/{product}/cdns", new MultipartCommandExecutor("cdn"u8), ParseCDNs, stoppingToken),
-                PV.V2 or PV.BestAvailable => await Execute(host, port, $"v2/products/{product}/cdns", new SimpleCommandExecutor(), ParseCDNs, stoppingToken),
+                PV.V1 => await Execute(client, host, port, $"v1/products/{product}/cdns", new MultipartCommandExecutor("cdn"u8), ParseCDNs, stoppingToken),
+                PV.V2 or PV.BestAvailable => await Execute(client, host, port, $"v2/products/{product}/cdns", new SimpleCommandExecutor(), ParseCDNs, stoppingToken),
                 _ => throw new ArgumentOutOfRangeException(nameof(version))
             });
 
@@ -64,13 +65,13 @@ namespace Blizztrack.Framework.Ribbit
         /// <returns></returns>
         /// <exception cref="ArgumentOutOfRangeException">If the given version can't be handled.</exception>
         /// <exception cref="OperationCanceledException">If a cancellation request was issued before the operation completed.</exception>
-        public static async Task<Version> GetProductVersions(string product, string host, int port = 1119,
+        public static async Task<Version> GetProductVersions(HttpClient client, string product, string host, int port = 1119,
             PV version = PV.BestAvailable,
             CancellationToken stoppingToken = default)
             => new (version switch
             {
-                PV.V1 => await Execute(host, port, $"v1/products/{product}/versions", new MultipartCommandExecutor("version"u8), ParseVersions, stoppingToken),
-                PV.V2 or PV.BestAvailable => await Execute(host, port, $"v2/products/{product}/versions", new SimpleCommandExecutor(), ParseVersions, stoppingToken),
+                PV.V1 => await Execute(client, host, port, $"v1/products/{product}/versions", new MultipartCommandExecutor("version"u8), ParseVersions, stoppingToken),
+                PV.V2 or PV.BestAvailable => await Execute(client, host, port, $"v2/products/{product}/versions", new SimpleCommandExecutor(), ParseVersions, stoppingToken),
                 _ => throw new ArgumentOutOfRangeException(nameof(version))
             });
 
@@ -85,13 +86,13 @@ namespace Blizztrack.Framework.Ribbit
         /// <returns></returns>
         /// <exception cref="ArgumentOutOfRangeException">If the given version can't be handled.</exception>
         /// <exception cref="OperationCanceledException">If a cancellation request was issued before the operation completed.</exception>
-        public static async Task<Version> GetProductBGDL(string product, string host, int port = 1119,
+        public static async Task<Version> GetProductBGDL(HttpClient client, string product, string host, int port = 1119,
             PV version = PV.BestAvailable,
             CancellationToken stoppingToken = default)
             => new Version(version switch
             {
-                PV.V1 => await Execute(host, port, $"v1/products/{product}/bgdl", new MultipartCommandExecutor("version"u8), ParseVersions, stoppingToken),
-                PV.V2 or PV.BestAvailable => await Execute(host, port, $"v2/products/{product}/bgdl", new SimpleCommandExecutor(), ParseVersions, stoppingToken),
+                PV.V1 => await Execute(client, host, port, $"v1/products/{product}/bgdl", new MultipartCommandExecutor("version"u8), ParseVersions, stoppingToken),
+                PV.V2 or PV.BestAvailable => await Execute(client, host, port, $"v2/products/{product}/bgdl", new SimpleCommandExecutor(), ParseVersions, stoppingToken),
                 _ => throw new ArgumentOutOfRangeException(nameof(version))
             });
 
@@ -182,32 +183,32 @@ namespace Blizztrack.Framework.Ribbit
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static Task<(int, T[])> Execute<T, Executor>(string host, int port, string command,
+        private static Task<(int, T[])> Execute<T, Executor>(HttpClient client, string host, int port, string command,
             Executor executor,
             PSV.Handler<T> parser,
             CancellationToken stoppingToken = default)
             where Executor : notnull, ICommandExecutor
         {
-            var networkStream = OpenNetwork(host, port, command, stoppingToken: stoppingToken);
+            var networkStream = OpenNetwork(client, host, port, command, stoppingToken: stoppingToken);
             var filteredStream = executor.Apply(networkStream, stoppingToken);
             return PSV.ParseAsync(filteredStream, parser);
         }
 
-        private static async IAsyncEnumerable<ArraySegment<byte>> OpenNetwork(string host, int port, string command,
+        private static async IAsyncEnumerable<ArraySegment<byte>> OpenNetwork(HttpClient client, string host, int port, string command,
             int bufferSize = 1024, [EnumeratorCancellation] CancellationToken stoppingToken = default)
         {
-            using var client = new Socket(SocketType.Stream, ProtocolType.Tcp);
-            await client.ConnectAsync(host, port, stoppingToken).ConfigureAwait(false);
-            var writeCount = await client.SendAsync(Encoding.UTF8.GetBytes(command), stoppingToken).ConfigureAwait(false);
-            await client.SendAsync("\n"u8.ToArray(), stoppingToken).ConfigureAwait(false);
+            using var response = await client.GetAsync($"http://{host}:{port}/{command}", HttpCompletionOption.ResponseHeadersRead, stoppingToken).ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+
+            using var contentStream = await response.Content.ReadAsStreamAsync(stoppingToken).ConfigureAwait(false);
 
             var buffer = ArrayPool<byte>.Shared.Rent(bufferSize);
-            var memoryBuffer = new Memory<byte>(buffer);
+            var memoryBuffer = buffer.AsMemory();
             try
             {
                 int writeOffset = 0;
                 int bytesRead;
-                while ((bytesRead = await client.ReceiveAsync(memoryBuffer[writeOffset..], stoppingToken).ConfigureAwait(false)) != 0)
+                while ((bytesRead = await contentStream.ReadAsync(memoryBuffer[writeOffset..], stoppingToken).ConfigureAwait(false)) != 0)
                 {
                     if (bytesRead + writeOffset >= bufferSize)
                     {
@@ -218,7 +219,8 @@ namespace Blizztrack.Framework.Ribbit
                         writeOffset += bytesRead;
                 }
 
-                yield return buffer[..writeOffset];
+                if (writeOffset > 0)
+                    yield return buffer[..writeOffset];
             }
             finally
             {

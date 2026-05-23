@@ -199,7 +199,7 @@ namespace Blizztrack.API
 
                 descriptors[i] = new(desc.EncodingKey.AsHexString(), desc.ContentKey.AsHexString(),
                     fs.GetCompressionSpec(desc.EncodingKey),
-                    new(desc.Archive.AsHexString(), desc.Offset, desc.Length));
+                    new(desc.Location.Archive.AsHexString(), desc.Location.Offset, desc.Location.Length));
             }
 
             return /*Convert.ToBase64String(System.Text.Encoding.ASCII.GetBytes(*/JsonSerializer.Serialize(descriptors)/*))*/;

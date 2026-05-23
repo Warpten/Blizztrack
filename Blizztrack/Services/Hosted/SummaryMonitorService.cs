@@ -22,10 +22,11 @@ namespace Blizztrack.Services.Hosted
     /// <summary>
     /// A singleton service in charge of periodically querying product state for every product declared in <see cref="Settings.Products"/>.
     /// </summary>
-    public class SummaryMonitorService(IOptionsMonitor<Settings> configurationMonitor, IServiceProvider serviceProvider) : BackgroundService
+    public class SummaryMonitorService(IHttpClientFactory clientFactory, IOptionsMonitor<Settings> configurationMonitor, IServiceProvider serviceProvider) : BackgroundService
     {
         private readonly MediatorService _mediatorService = serviceProvider.GetRequiredService<MediatorService>();
         private readonly IOptionsMonitor<Settings> _settingsMonitor = configurationMonitor;
+        private readonly IHttpClientFactory _clientFactory = clientFactory;
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
@@ -38,13 +39,15 @@ namespace Blizztrack.Services.Hosted
             });
 
             // Staging buffer for sequence numbers of the currently tested product.
-            var sequenceNumbers = new int[(int) Enum.GetValues<SequenceNumberType>().Length];
+            var sequenceNumbers = new int[Enum.GetValues<SequenceNumberType>().Length];
 
             while (!stoppingToken.IsCancellationRequested)
             {
                 while (await periodicTimer.WaitForNextTickAsync(stoppingToken))
                 {
                     using var _ = ActivitySupplier.StartActivity("blizztrack.ribbit.summary");
+
+                    var client = _clientFactory.CreateClient();
 
                     sequenceNumbers.AsSpan().Clear(); // Reset the staging buffer
 
@@ -56,7 +59,7 @@ namespace Blizztrack.Services.Hosted
                     var queryEndpoint = _settingsMonitor.CurrentValue.Ribbit.Endpoint;
                     var monitoredProducts = _settingsMonitor.CurrentValue.Products;
 
-                    var summaryTable = await Commands.GetEndpointSummary(queryEndpoint.Host, queryEndpoint.Port, stoppingToken: stoppingToken);
+                    var summaryTable = await Commands.GetEndpointSummary(client, queryEndpoint.Host, queryEndpoint.Port, stoppingToken: stoppingToken);
 
                     // Add "summary" as a fake product.
                     if (await IsUpdatePublishable("summary", summaryTable.SequenceNumber, e => e.Version, databaseContext, stoppingToken))
@@ -100,7 +103,7 @@ namespace Blizztrack.Services.Hosted
                         // If that's the case, try to update.
                         if (productState == null || productState.CDN != sequenceNumbers[(int) SequenceNumberType.CDN])
                         {
-                            var (newProduct, eventSource) = await UpdateCDN(productCode, queryEndpoint, sequenceNumbers[(int) SequenceNumberType.CDN],
+                            var (newProduct, eventSource) = await UpdateCDN(client, productCode, queryEndpoint, sequenceNumbers[(int) SequenceNumberType.CDN],
                                 productState, stoppingToken);
                             if (newProduct is not null)
                                 databaseContext.Products.Add(newProduct);
@@ -111,7 +114,7 @@ namespace Blizztrack.Services.Hosted
 
                         if (productState == null || productState.Version != sequenceNumbers[(int) SequenceNumberType.Version])
                         {
-                            var (newProduct, eventSource) = await UpdateVersion(productCode, queryEndpoint, sequenceNumbers[(int) SequenceNumberType.Version],
+                            var (newProduct, eventSource) = await UpdateVersion(client, productCode, queryEndpoint, sequenceNumbers[(int) SequenceNumberType.Version],
                                 productState, stoppingToken);
 
                             if (newProduct is not null)
@@ -123,7 +126,7 @@ namespace Blizztrack.Services.Hosted
 
                         if (productState == null || productState.BGDL != sequenceNumbers[(int) SequenceNumberType.BGDL])
                         {
-                            var (newProduct, eventSource) = await UpdateBGDL(productCode, queryEndpoint, sequenceNumbers[(int) SequenceNumberType.BGDL],
+                            var (newProduct, eventSource) = await UpdateBGDL(client, productCode, queryEndpoint, sequenceNumbers[(int) SequenceNumberType.BGDL],
                                 productState, stoppingToken);
 
                             if (newProduct is not null)
@@ -158,7 +161,7 @@ namespace Blizztrack.Services.Hosted
         /// <param name="cacheEntry">The product, if it already is in database.</param>
         /// <param name="stoppingToken">A cancellation token.</param>
         /// <returns>A product to insert. If the product needed to be updated, it will be.</returns>
-        private async Task<(Product?, Func<ValueTask>)> UpdateCDN(string productCode, Options.Endpoint queryEndpoint, int sequenceNumber,
+        private async Task<(Product?, Func<ValueTask>)> UpdateCDN(HttpClient client, string productCode, Options.Endpoint queryEndpoint, int sequenceNumber,
             Product? cacheEntry, 
             CancellationToken stoppingToken)
         {
@@ -166,7 +169,7 @@ namespace Blizztrack.Services.Hosted
                 ("blizztrack.ribbit.product", productCode),
                 ("blizztrack.ribbit.sequence", sequenceNumber));
 
-            var cdns = await Commands.GetProductCDNs(productCode, queryEndpoint.Host, queryEndpoint.Port, stoppingToken: stoppingToken);
+            var cdns = await Commands.GetProductCDNs(client, productCode, queryEndpoint.Host, queryEndpoint.Port, stoppingToken: stoppingToken);
             if (cdns.SequenceNumber == sequenceNumber)
             {
                 var isInsertion = cacheEntry is null;
@@ -222,7 +225,7 @@ namespace Blizztrack.Services.Hosted
         /// <param name="cacheEntry">The product, if it already is in database.</param>
         /// <param name="stoppingToken">A cancellation token.</param>
         /// <returns>A product to insert. If the product needed to be updated, it will be.</returns>
-        private async Task<(Product?, Func<ValueTask>)> UpdateVersion(string productCode, Options.Endpoint queryEndpoint, int sequenceNumber,
+        private async Task<(Product?, Func<ValueTask>)> UpdateVersion(HttpClient client, string productCode, Options.Endpoint queryEndpoint, int sequenceNumber,
             Product? cacheEntry,
             CancellationToken stoppingToken)
         {
@@ -230,7 +233,7 @@ namespace Blizztrack.Services.Hosted
                 ("blizztrack.ribbit.product", productCode),
                 ("blizztrack.ribbit.sequence", sequenceNumber));
 
-            var versions = await Commands.GetProductVersions(productCode, queryEndpoint.Host, queryEndpoint.Port, stoppingToken: stoppingToken);
+            var versions = await Commands.GetProductVersions(client, productCode, queryEndpoint.Host, queryEndpoint.Port, stoppingToken: stoppingToken);
             if (versions.SequenceNumber == sequenceNumber)
             {
                 var isInsertion = cacheEntry is null;
@@ -269,7 +272,6 @@ namespace Blizztrack.Services.Hosted
                     else
                     {
                         // ?
-                        int x = 1;
                     }
                 }
 
@@ -291,7 +293,7 @@ namespace Blizztrack.Services.Hosted
         /// <param name="cacheEntry">The product, if it already is in database.</param>
         /// <param name="stoppingToken">A cancellation token.</param>
         /// <returns>A product to insert. If the product needed to be updated, it will be.</returns>
-        private async Task<(Product?, Func<ValueTask>)> UpdateBGDL(string productCode, Options.Endpoint queryEndpoint, int sequenceNumber,
+        private async Task<(Product?, Func<ValueTask>)> UpdateBGDL(HttpClient client, string productCode, Options.Endpoint queryEndpoint, int sequenceNumber,
             Product? cacheEntry,
             CancellationToken stoppingToken)
         {
@@ -300,7 +302,7 @@ namespace Blizztrack.Services.Hosted
                 ("blizztrack.ribbit.sequence", sequenceNumber));
 
 
-            var bgdl = await Commands.GetProductBGDL(productCode, queryEndpoint.Host, queryEndpoint.Port, stoppingToken: stoppingToken);
+            var bgdl = await Commands.GetProductBGDL(client, productCode, queryEndpoint.Host, queryEndpoint.Port, stoppingToken: stoppingToken);
             if (bgdl.SequenceNumber == sequenceNumber)
             {
                 var isInsertion = cacheEntry is null;

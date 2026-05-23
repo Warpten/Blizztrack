@@ -101,5 +101,7 @@ namespace Blizztrack.Services
                 return ref Unsafe.AsRef<byte>(_fileData);
             }
         }
+
+        public int Length => _resourceHandle.Length;
     }
 }
