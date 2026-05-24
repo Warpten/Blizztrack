@@ -77,12 +77,11 @@ namespace Blizztrack.Framework.TACT
             if (_root == default)
                 return [];
 
-            // TODO: Smell: MD5 != IContentKey<MD5>.
             ref readonly var rootResult = ref _root.FindFileDataID(fileDataID);
             if (Unsafe.IsNullRef(in rootResult))
                 return [];
 
-            return OpenContentKey(new Views.ContentKey(rootResult.ContentKey));
+            return OpenContentKey(rootResult.ContentKey);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

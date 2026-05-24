@@ -1,4 +1,5 @@
-﻿using Blizztrack.Shared.Extensions;
+﻿using Blizztrack.Shared;
+using Blizztrack.Shared.Extensions;
 
 using System.Diagnostics;
 using System.Diagnostics.Contracts;
@@ -305,5 +306,44 @@ namespace Blizztrack.Framework.TACT
         [MethodImpl(MethodImplOptions.AggressiveInlining), Pure]
         public static T AsKey<T>(this scoped ref ReadOnlySpan<char> @string) where T : struct, IOwnedKey<T>
             => T.FromString(@string);
+    }
+
+    /// <summary>
+    /// A flat buffer of multiple <see cref="IKey{T}"/>.
+    /// </summary>
+    /// <typeparam name="T">The key type.</typeparam>
+    /// <param name="data">The data buffer holding all the keys.</param>
+    public readonly ref struct Keys<T>(StridedReadOnlySpan<byte> data) where T : struct, IKey<T>, allows ref struct
+    {
+        private readonly StridedReadOnlySpan<byte> _data = data;
+
+        public int Count => _data.Count;
+
+        public T this[int index]
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => _data[index].AsKey<T>();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly Enumerator GetEnumerator() => new(this);
+
+        public ref struct Enumerator
+        {
+            private readonly Keys<T> _data;
+            private int _index = 0;
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal Enumerator(Keys<T> data) => _data = data;
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public bool MoveNext() => ++_index < _data.Count;
+
+            public readonly T Current
+            {
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                get => _data[_index];
+            }
+        }
     }
 }

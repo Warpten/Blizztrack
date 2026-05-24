@@ -185,7 +185,7 @@ namespace Blizztrack.Framework.TACT.Implementation
             var records = GC.AllocateUninitializedArray<RootRecord>(recordCount);
             for (var i = 0; i < records.Length; ++i)
             {
-                var contentKey = new MD5(dataStream.Advance(MD5.Length));
+                var contentKey = new ContentKey(dataStream.Advance(16));
                 var nameHash = dataStream.Advance(8).ReadUInt64LE();
 
                 fdidCounter += fdids[i];
@@ -224,7 +224,7 @@ namespace Blizztrack.Framework.TACT.Implementation
 
                 fdidCounter += fdids[i];
 
-                records[i] = new(contentKeys[i], nameHash, fdidCounter + i);
+                records[i] = new(new ContentKey(contentKeys[i]), nameHash, fdidCounter + i);
             }
 
             return records;

@@ -287,7 +287,7 @@ namespace Blizztrack.Framework.TACT.Implementation
             public readonly int Count => _encodingKeys.Count;
             public readonly ulong FileSize;
 
-            internal unsafe Entry(ReadOnlySpan<byte> contentKey, byte keyCount, ReadOnlySpan<byte> encodingKeys, ulong fileSize)
+            internal Entry(ReadOnlySpan<byte> contentKey, byte keyCount, ReadOnlySpan<byte> encodingKeys, ulong fileSize)
             {
                 _encodingKeys = encodingKeys.WithStride(encodingKeys.Length / keyCount);
 
@@ -295,16 +295,10 @@ namespace Blizztrack.Framework.TACT.Implementation
                 FileSize = fileSize;
             }
 
-            public EncodingKey[] Keys
+            public Keys<Views.EncodingKey> Keys
             {
                 [MethodImpl(MethodImplOptions.AggressiveInlining)]
-                get
-                {
-                    var keys = new EncodingKey[Count];
-                    for (var i = 0; i < Count; ++i)
-                        keys[i] = _encodingKeys[i].AsKey<EncodingKey>();
-                    return keys;
-                }
+                get => new(_encodingKeys);
             }
 
             public Views.EncodingKey this[int index] => _encodingKeys[index].AsKey<Views.EncodingKey>();

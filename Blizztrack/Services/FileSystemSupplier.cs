@@ -54,11 +54,11 @@ namespace Blizztrack.Services
             if (results.Count == 0)
                 return default;
 
-            foreach (Framework.TACT.Views.EncodingKey encodingKey in results.Keys)
+            foreach (var encodingKey in results.Keys)
             {
-                var archiveInfo = compoundedIndex.FindEncodingKey(in encodingKey);
+                var archiveInfo = compoundedIndex.FindEncodingKey(encodingKey);
                 if (!archiveInfo && fileIndex is not null)
-                    archiveInfo = fileIndex.FindEncodingKey(in encodingKey);
+                    archiveInfo = fileIndex.FindEncodingKey(encodingKey);
 
                 if (archiveInfo)
                     return await rootRepository.Obtain(productCode, archiveInfo.Archive, stoppingToken);

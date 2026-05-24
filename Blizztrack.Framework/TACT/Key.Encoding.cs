@@ -1,4 +1,5 @@
 ﻿using Blizztrack.Framework.TACT.Views;
+using Blizztrack.Shared;
 
 using Pidgin.Expression;
 
