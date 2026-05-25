@@ -133,10 +133,6 @@ namespace Blizztrack.Framework.TACT
             {
                 // Author: Geoff Langdale, http://branchfree.org
                 // https://github.com/WojciechMula/toys/blob/master/simd-parse-hex/geoff_algorithm.cpp#L15
-                // https://twitter.com/geofflangdale/status/1484460241240539137
-                // https://twitter.com/geofflangdale/status/1484460243778097159
-                // https://twitter.com/geofflangdale/status/1484460245560684550
-                // https://twitter.com/geofflangdale/status/1484460247368355842
                 // I wish I'd never comment twitter links in code... but here we are.
 
                 do
@@ -144,14 +140,14 @@ namespace Blizztrack.Framework.TACT
                     var v = Vector128.LoadUnsafe(ref srcRef, offset);
 
                     var t1 = v + Vector128.Create((byte)(0xFF - '9')); // Move digits '0'..'9' into range 0xF6..0xFF.
-                    var t2 = subtractSaturate(t1, Vector128.Create((byte)6));
+                    var t2 = Vector128.SubtractSaturate(t1, Vector128.Create((byte)6));
                     var t3 = Vector128.Subtract(t2, Vector128.Create((byte)0xF0));
                     var t4 = v & Vector128.Create((byte)0xDF);
                     var t5 = t4 - Vector128.Create((byte)'A');
-                    var t6 = addSaturate(t5, Vector128.Create((byte)10));
+                    var t6 = Vector128.AddSaturate(t5, Vector128.Create((byte)10));
 
                     var t7 = Vector128.Min(t3, t6);
-                    var t8 = addSaturate(t7, Vector128.Create((byte)(127 - 15)));
+                    var t8 = Vector128.AddSaturate(t7, Vector128.Create((byte)(127 - 15)));
 
                     if (t8.ExtractMostSignificantBits() != 0)
                         return T.Zero;
@@ -210,30 +206,6 @@ namespace Blizztrack.Framework.TACT
             }
 
             return T.From(workBuffer);
-
-            // Should be Vector128.SubtractSaturate but that appears to not be public on .NET 9??
-            Vector128<byte> subtractSaturate(Vector128<byte> left, Vector128<byte> right)
-            {
-                if (Sse2.IsSupported)
-                    return Sse2.SubtractSaturate(left, right);
-
-                if (!AdvSimd.Arm64.IsSupported)
-                    throw new NotSupportedException();
-
-                return AdvSimd.SubtractSaturate(left, right);
-            }
-
-            // Should be Vector128.AddSaturate but that appears to not be public on .NET 9??
-            Vector128<byte> addSaturate(Vector128<byte> left, Vector128<byte> right)
-            {
-                if (Sse2.IsSupported)
-                    return Sse2.AddSaturate(left, right);
-
-                if (!AdvSimd.Arm64.IsSupported)
-                    throw new NotSupportedException();
-
-                return AdvSimd.AddSaturate(left, right);
-            }
         }
     }
 
